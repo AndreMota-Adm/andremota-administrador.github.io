@@ -302,9 +302,10 @@ body{font-family:'DM Sans',sans-serif;background:var(--navy);color:var(--white);
 .cc-lanc-val{font-size:.9rem;font-weight:700;color:var(--white);}
 .cc-lanc-info2{font-size:.7rem;color:rgba(255,255,255,.4);margin-top:.1rem;}
 .cc-lanc-badge{font-size:.65rem;background:rgba(201,162,39,.15);color:var(--gold);padding:.15rem .45rem;border-radius:10px;margin-top:.2rem;display:inline-block;}
-.cc-lanc-del{position:absolute;top:8px;right:8px;background:rgba(239,83,80,.12);border:1px solid rgba(239,83,80,.2);color:#EF5350;border-radius:6px;width:22px;height:22px;font-size:.65rem;cursor:pointer;display:flex;align-items:center;justify-content:center;touch-action:manipulation;}
-.cc-lanc-edit{position:absolute;top:8px;right:36px;background:rgba(201,162,39,.12);border:1px solid rgba(201,162,39,.3);color:var(--gold);border-radius:6px;width:22px;height:22px;font-size:.65rem;cursor:pointer;display:flex;align-items:center;justify-content:center;touch-action:manipulation;}
-.cc-lanc-cat-select{background:rgba(255,255,255,.08);border:1px solid rgba(201,162,39,.4);border-radius:6px;color:var(--white);font-family:'DM Sans',sans-serif;font-size:.72rem;padding:.15rem .3rem;margin-top:.15rem;max-width:150px;}
+.cc-lanc-actions{display:flex;flex-direction:column;gap:5px;flex-shrink:0;margin-left:2px;}
+.cc-lanc-del{background:rgba(239,83,80,.12);border:1px solid rgba(239,83,80,.2);color:#EF5350;border-radius:6px;width:22px;height:22px;font-size:.65rem;cursor:pointer;display:flex;align-items:center;justify-content:center;touch-action:manipulation;}
+.cc-lanc-edit{background:rgba(201,162,39,.12);border:1px solid rgba(201,162,39,.3);color:var(--gold);border-radius:6px;width:22px;height:22px;font-size:.65rem;cursor:pointer;display:flex;align-items:center;justify-content:center;touch-action:manipulation;}
+.cc-btn-cancel-edit{width:100%;background:transparent;color:rgba(255,255,255,.55);border:1px solid rgba(255,255,255,.2);border-radius:10px;padding:.6rem;font-size:.8rem;font-weight:600;font-family:'DM Sans',sans-serif;cursor:pointer;margin-top:.5rem;touch-action:manipulation;}
 
 /* Cartões cadastrados */
 .cc-cartao-card{background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.09);border-radius:14px;padding:14px;margin-bottom:10px;}
@@ -1143,6 +1144,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--navy);color:var(--white);
         </div>
         <div class="cc-parc-preview" id="ccParcelaPreview">Preencha o valor e as parcelas</div>
         <button class="cc-btn-add" id="ccBtnAdd">+ Adicionar lançamento</button>
+        <button class="cc-btn-cancel-edit" id="ccBtnCancelEdit" style="display:none;" onclick="ccCancelarEdicao()">Cancelar edição</button>
       </div>
       <div class="cc-lanc-header">
         <div class="cc-sec-title" style="margin:0">Lançamentos do mês</div>
@@ -2749,6 +2751,7 @@ var ccCartoes=[];
 var ccCompras=[];
 var ccCatsCustom=[];
 var ccSelectedCartao=null;
+var ccEditingId=null;
 var ccCurrentYear=new Date().getFullYear();
 
 function ccSave(){
@@ -2918,35 +2921,13 @@ function ccRenderLancList(){
     div.innerHTML='<div class="cc-lanc-icon">'+ccGetCatIcon(c.cat)+'</div>'
       +'<div class="cc-lanc-info"><div class="cc-lanc-desc">'+c.desc+'</div><div class="cc-lanc-cat">'+c.cat+'</div></div>'
       +'<div class="cc-lanc-right"><div class="cc-lanc-val">'+ccFmt(valParcela)+'</div>'+totalInfo+badgeHtml+'</div>'
-      +'<button class="cc-lanc-edit" data-id="'+c.id+'" title="Alterar categoria">✏️</button>'
-      +'<button class="cc-lanc-del" data-id="'+c.id+'">✕</button>';
+      +'<div class="cc-lanc-actions">'
+      +'<button class="cc-lanc-edit" data-id="'+c.id+'" title="Editar lançamento">✏️</button>'
+      +'<button class="cc-lanc-del" data-id="'+c.id+'" title="Excluir">✕</button>'
+      +'</div>';
     div.querySelector('.cc-lanc-edit').onclick=function(){
       var id=this.getAttribute('data-id');
-      var compra=ccCompras.find(function(x){return x.id===id;});
-      if(!compra) return;
-      var catInfoEl=div.querySelector('.cc-lanc-cat');
-      var sel=document.createElement('select');
-      sel.className='cc-lanc-cat-select';
-      CC_CATS_DEFAULT.concat(ccCatsCustom).forEach(function(cCat){
-        var opt=document.createElement('option');
-        opt.value=cCat.nome;
-        opt.textContent=cCat.emoji+' '+cCat.nome;
-        if(cCat.nome===compra.cat) opt.selected=true;
-        sel.appendChild(opt);
-      });
-      catInfoEl.innerHTML='';
-      catInfoEl.appendChild(sel);
-      sel.focus();
-      sel.addEventListener('change',function(){
-        compra.cat=sel.value;
-        ccSave();
-        ccRenderLancList();
-        ccRenderDashboard();
-      });
-      sel.addEventListener('blur',function(){
-        // Se o usuario clicar fora sem trocar a categoria, so restaura a exibicao normal
-        setTimeout(function(){ ccRenderLancList(); },150);
-      });
+      ccEditarLancamento(id);
     };
     div.querySelector('.cc-lanc-del').onclick=function(){
       var id=this.getAttribute('data-id');
@@ -2966,20 +2947,69 @@ function ccAddLancamento(){
   var parcelas=parseInt(document.getElementById('ccFParcelas').value)||1;
   var parcelaAtual=parseInt(document.getElementById('ccFParcelaAtual').value)||1;
   if(!desc||valor<=0||parcelaAtual>parcelas) return;
-  ccCompras.push({
-    id:ccUid(),cartaoId:ccSelectedCartao,desc:desc,cat:cat,
-    valorTotal:valor,parcelas:parcelas,parcelaAtual:parcelaAtual,
-    mesInicio:currentMonth,anoInicio:ccCurrentYear
-  });
+  if(ccEditingId){
+    // Modo edição: atualiza o lançamento existente (mantém o mesmo mês/ano de origem, so corrige os dados)
+    var compra=ccCompras.find(function(x){return x.id===ccEditingId;});
+    if(compra){
+      compra.cartaoId=ccSelectedCartao;
+      compra.desc=desc;
+      compra.cat=cat;
+      compra.valorTotal=valor;
+      compra.parcelas=parcelas;
+      compra.parcelaAtual=parcelaAtual;
+    }
+  } else {
+    ccCompras.push({
+      id:ccUid(),cartaoId:ccSelectedCartao,desc:desc,cat:cat,
+      valorTotal:valor,parcelas:parcelas,parcelaAtual:parcelaAtual,
+      mesInicio:currentMonth,anoInicio:ccCurrentYear
+    });
+  }
   ccSave();
+  ccResetForm();
+  ccRenderLancList(); ccRenderDashboard();
+  // Atualizar módulo financeiro automaticamente
+  recalcAll();
+}
+
+// Preenche o formulário com os dados de um lançamento existente, pra corrigir/editar
+function ccEditarLancamento(id){
+  var compra=ccCompras.find(function(x){return x.id===id;});
+  if(!compra) return;
+  ccEditingId=compra.id;
+  ccSelectedCartao=compra.cartaoId;
+  ccRenderChips();
+  document.getElementById('ccFDesc').value=compra.desc;
+  document.getElementById('ccFCat').value=compra.cat;
+  document.getElementById('ccFValor').value=compra.valorTotal;
+  document.getElementById('ccFParcelas').value=compra.parcelas;
+  document.getElementById('ccFParcelaAtual').value=compra.parcelaAtual;
+  ccUpdateParcelaPreview();
+  var btn=document.getElementById('ccBtnAdd');
+  if(btn) btn.textContent='💾 Salvar alterações';
+  var btnCancel=document.getElementById('ccBtnCancelEdit');
+  if(btnCancel) btnCancel.style.display='block';
+  var formBox=document.querySelector('.cc-form-box');
+  if(formBox) formBox.scrollIntoView({behavior:'smooth',block:'start'});
+}
+
+// Cancela a edição em andamento e limpa o formulário, sem salvar nada
+function ccCancelarEdicao(){
+  ccResetForm();
+}
+
+// Limpa o formulário e devolve pro estado normal de "adicionar novo"
+function ccResetForm(){
+  ccEditingId=null;
+  var btn=document.getElementById('ccBtnAdd');
+  if(btn) btn.textContent='+ Adicionar lançamento';
+  var btnCancel=document.getElementById('ccBtnCancelEdit');
+  if(btnCancel) btnCancel.style.display='none';
   document.getElementById('ccFDesc').value='';
   document.getElementById('ccFValor').value='';
   document.getElementById('ccFParcelas').value='1';
   document.getElementById('ccFParcelaAtual').value='1';
   ccUpdateParcelaPreview();
-  ccRenderLancList(); ccRenderDashboard();
-  // Atualizar módulo financeiro automaticamente
-  recalcAll();
 }
 
 function ccRenderDashboard(){
