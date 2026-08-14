@@ -303,6 +303,8 @@ body{font-family:'DM Sans',sans-serif;background:var(--navy);color:var(--white);
 .cc-lanc-info2{font-size:.7rem;color:rgba(255,255,255,.4);margin-top:.1rem;}
 .cc-lanc-badge{font-size:.65rem;background:rgba(201,162,39,.15);color:var(--gold);padding:.15rem .45rem;border-radius:10px;margin-top:.2rem;display:inline-block;}
 .cc-lanc-del{position:absolute;top:8px;right:8px;background:rgba(239,83,80,.12);border:1px solid rgba(239,83,80,.2);color:#EF5350;border-radius:6px;width:22px;height:22px;font-size:.65rem;cursor:pointer;display:flex;align-items:center;justify-content:center;touch-action:manipulation;}
+.cc-lanc-edit{position:absolute;top:8px;right:36px;background:rgba(201,162,39,.12);border:1px solid rgba(201,162,39,.3);color:var(--gold);border-radius:6px;width:22px;height:22px;font-size:.65rem;cursor:pointer;display:flex;align-items:center;justify-content:center;touch-action:manipulation;}
+.cc-lanc-cat-select{background:rgba(255,255,255,.08);border:1px solid rgba(201,162,39,.4);border-radius:6px;color:var(--white);font-family:'DM Sans',sans-serif;font-size:.72rem;padding:.15rem .3rem;margin-top:.15rem;max-width:150px;}
 
 /* Cartões cadastrados */
 .cc-cartao-card{background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.09);border-radius:14px;padding:14px;margin-bottom:10px;}
@@ -2916,7 +2918,36 @@ function ccRenderLancList(){
     div.innerHTML='<div class="cc-lanc-icon">'+ccGetCatIcon(c.cat)+'</div>'
       +'<div class="cc-lanc-info"><div class="cc-lanc-desc">'+c.desc+'</div><div class="cc-lanc-cat">'+c.cat+'</div></div>'
       +'<div class="cc-lanc-right"><div class="cc-lanc-val">'+ccFmt(valParcela)+'</div>'+totalInfo+badgeHtml+'</div>'
+      +'<button class="cc-lanc-edit" data-id="'+c.id+'" title="Alterar categoria">✏️</button>'
       +'<button class="cc-lanc-del" data-id="'+c.id+'">✕</button>';
+    div.querySelector('.cc-lanc-edit').onclick=function(){
+      var id=this.getAttribute('data-id');
+      var compra=ccCompras.find(function(x){return x.id===id;});
+      if(!compra) return;
+      var catInfoEl=div.querySelector('.cc-lanc-cat');
+      var sel=document.createElement('select');
+      sel.className='cc-lanc-cat-select';
+      CC_CATS_DEFAULT.concat(ccCatsCustom).forEach(function(cCat){
+        var opt=document.createElement('option');
+        opt.value=cCat.nome;
+        opt.textContent=cCat.emoji+' '+cCat.nome;
+        if(cCat.nome===compra.cat) opt.selected=true;
+        sel.appendChild(opt);
+      });
+      catInfoEl.innerHTML='';
+      catInfoEl.appendChild(sel);
+      sel.focus();
+      sel.addEventListener('change',function(){
+        compra.cat=sel.value;
+        ccSave();
+        ccRenderLancList();
+        ccRenderDashboard();
+      });
+      sel.addEventListener('blur',function(){
+        // Se o usuario clicar fora sem trocar a categoria, so restaura a exibicao normal
+        setTimeout(function(){ ccRenderLancList(); },150);
+      });
+    };
     div.querySelector('.cc-lanc-del').onclick=function(){
       var id=this.getAttribute('data-id');
       if(!confirm('Remover esta compra?')) return;
