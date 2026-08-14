@@ -474,6 +474,16 @@ body{font-family:'DM Sans',sans-serif;background:var(--navy);color:var(--white);
 .btn-salvar-perfil:active{opacity:.8;}
 .perfil-salvo-msg{text-align:center;color:#4CAF82;font-size:.85rem;font-weight:600;margin-top:.5rem;display:none;}
 
+/* ===== SINCRONIZAÇÃO ENTRE DISPOSITIVOS ===== */
+.sync-card{background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.1);border-radius:14px;padding:1rem 1.2rem;}
+.sync-header{font-size:.75rem;font-weight:700;color:var(--gold);letter-spacing:.06em;text-transform:uppercase;margin-bottom:.4rem;display:flex;align-items:center;gap:.4rem;}
+.sync-badge-beta{background:rgba(201,162,39,.2);color:var(--gold-light);border:1px solid rgba(201,162,39,.4);border-radius:20px;padding:.1rem .5rem;font-size:.6rem;letter-spacing:.04em;}
+.sync-desc{font-size:.78rem;color:rgba(255,255,255,.6);line-height:1.6;margin-bottom:.8rem;}
+.sync-status{font-size:.78rem;color:rgba(255,255,255,.75);background:rgba(255,255,255,.05);border-radius:10px;padding:.6rem .8rem;margin-bottom:.8rem;line-height:1.5;}
+.sync-btn{width:100%;background:var(--gold);color:var(--navy);border:none;border-radius:10px;padding:.7rem;font-size:.85rem;font-weight:700;font-family:'DM Sans',sans-serif;cursor:pointer;margin-bottom:.5rem;touch-action:manipulation;}
+.sync-btn:active{opacity:.8;}
+.sync-btn-secondary{width:100%;background:transparent;color:rgba(255,255,255,.55);border:1px solid rgba(255,255,255,.2);border-radius:10px;padding:.6rem;font-size:.78rem;font-weight:600;font-family:'DM Sans',sans-serif;cursor:pointer;touch-action:manipulation;}
+
 /* ===== SAUDAÇÃO PERSONALIZADA ===== */
 .dash-greeting h2{font-family:'Cormorant Garamond',serif;font-size:1.6rem;font-weight:700;color:var(--gold-light);}
 .dash-greeting .greeting-nome{color:var(--white);}
@@ -940,6 +950,19 @@ body{font-family:'DM Sans',sans-serif;background:var(--navy);color:var(--white);
             <span style="font-size:1.3rem;">💬</span>
             <span>Chamar no WhatsApp</span>
           </a>
+        </div>
+        <!-- Sincronização entre dispositivos -->
+        <div>
+          <div class="perfil-label">Sincronização entre dispositivos</div>
+          <div class="sync-card" id="syncCard">
+            <div class="sync-header">🔄 Sincronizar via Dropbox <span class="sync-badge-beta">BETA</span></div>
+            <div class="sync-desc">Vincule um arquivo dentro da sua pasta do Dropbox (ou OneDrive/Google Drive) para manter os lançamentos atualizados entre o computador do trabalho e o de casa. Disponível apenas no Google Chrome ou Microsoft Edge, no computador.</div>
+            <div class="sync-status" id="syncStatus">Verificando...</div>
+            <button class="sync-btn" id="syncCreateBtn" onclick="syncCreateFile()" style="display:none;">🆕 Criar arquivo de sincronização (primeiro aparelho)</button>
+            <button class="sync-btn" id="syncOpenBtn" onclick="syncOpenFile()" style="display:none;">📂 Abrir arquivo já existente (outro aparelho)</button>
+            <button class="sync-btn" id="syncNowBtn" onclick="syncNow()" style="display:none;">🔄 Sincronizar agora</button>
+            <button class="sync-btn-secondary" id="syncUnlinkBtn" onclick="syncDisconnect()" style="display:none;">Desvincular arquivo</button>
+          </div>
         </div>
         <!-- Botão salvar -->
         <button class="btn-salvar-perfil" onclick="salvarPerfil()">💾 Salvar perfil</button>
@@ -1919,6 +1942,9 @@ var data={};
 var toastTimer=null;
 // emprestimos: array global [{nome,tipo,valor,mesEntrada,parcelas,parcela}]
 var emprestimos=[];
+// ===== SINCRONIZAÇÃO ENTRE DISPOSITIVOS (via arquivo, ex: pasta do Dropbox) =====
+var syncFileHandle=null;
+var syncLastSavedAt=0;
 // Cria (se ainda nao existir) e retorna o "balde" de dados de um mes especifico de um ano especifico.
 // Isso e o que permite Janeiro/2026 e Janeiro/2027 serem completamente independentes.
 function ensureMonthData(ano,mes){
@@ -1939,7 +1965,255 @@ function ensureMonthData(ano,mes){
 }
 function initData(){ensureMonthData(currentYear,currentMonth);}
 function showToast(){var t=document.getElementById('toastSalvo');if(!t)return;t.classList.add('show');if(toastTimer)clearTimeout(toastTimer);toastTimer=setTimeout(function(){t.classList.remove('show');},1500);}
-function saveData(){try{localStorage.setItem('amcf_data',JSON.stringify(data));localStorage.setItem('amcf_emp',JSON.stringify(emprestimos));showToast();}catch(e){}}
+function saveData(){try{localStorage.setItem('amcf_data',JSON.stringify(data));localStorage.setItem('amcf_emp',JSON.stringify(emprestimos));showToast();}catch(e){} if(syncFileHandle) syncWriteToFile();}
+
+// ---- Suporte do navegador (so funciona em Chrome/Edge no computador) ----
+function syncSupported(){
+  return typeof window.showSaveFilePicker==='function' && typeof window.showOpenFilePicker==='function';
+}
+
+// ---- IndexedDB simples, so pra lembrar qual arquivo foi vinculado entre uma sessao e outra ----
+function syncIdbOpen(){
+  return new Promise(function(resolve,reject){
+    var req=indexedDB.open('amcf_sync_db',1);
+    req.onupgradeneeded=function(){req.result.createObjectStore('handles');};
+    req.onsuccess=function(){resolve(req.result);};
+    req.onerror=function(){reject(req.error);};
+  });
+}
+function syncIdbSet(key,val){
+  return syncIdbOpen().then(function(db){
+    return new Promise(function(resolve,reject){
+      var tx=db.transaction('handles','readwrite');
+      tx.objectStore('handles').put(val,key);
+      tx.oncomplete=function(){resolve();};
+      tx.onerror=function(){reject(tx.error);};
+    });
+  });
+}
+function syncIdbGet(key){
+  return syncIdbOpen().then(function(db){
+    return new Promise(function(resolve,reject){
+      var tx=db.transaction('handles','readonly');
+      var req=tx.objectStore('handles').get(key);
+      req.onsuccess=function(){resolve(req.result);};
+      req.onerror=function(){reject(req.error);};
+    });
+  });
+}
+
+// ---- Monta o "pacote" completo com tudo que deve ser sincronizado ----
+function syncBuildPayload(){
+  return {
+    tipo:'amcf_sync',
+    versao:1,
+    savedAt:Date.now(),
+    data:data,
+    emprestimos:emprestimos,
+    customLines:customLines,
+    perfil:perfil,
+    metaReserva:metaReserva,
+    ccCartoes:(typeof ccCartoes!=='undefined')?ccCartoes:[],
+    ccCompras:(typeof ccCompras!=='undefined')?ccCompras:[],
+    ccCatsCustom:(typeof ccCatsCustom!=='undefined')?ccCatsCustom:[]
+  };
+}
+
+// ---- Aplica um pacote recebido do arquivo pro app inteiro (dados + tela) ----
+function syncApplyPayload(payload){
+  if(!payload||payload.tipo!=='amcf_sync') return false;
+  data=payload.data||data;
+  emprestimos=payload.emprestimos||emprestimos;
+  customLines=payload.customLines||customLines;
+  perfil=payload.perfil||perfil;
+  if(typeof payload.metaReserva==='number') metaReserva=payload.metaReserva;
+  if(typeof ccCartoes!=='undefined'&&payload.ccCartoes) ccCartoes=payload.ccCartoes;
+  if(typeof ccCompras!=='undefined'&&payload.ccCompras) ccCompras=payload.ccCompras;
+  if(typeof ccCatsCustom!=='undefined'&&payload.ccCatsCustom) ccCatsCustom=payload.ccCatsCustom;
+  syncLastSavedAt=payload.savedAt||Date.now();
+  // Grava tambem localmente, pra continuar funcionando normal se o arquivo ficar indisponivel depois
+  try{
+    localStorage.setItem('amcf_data',JSON.stringify(data));
+    localStorage.setItem('amcf_emp',JSON.stringify(emprestimos));
+    saveCustomLines();
+    localStorage.setItem('amcf_perfil',JSON.stringify(perfil));
+    localStorage.setItem('amcf_meta_reserva',metaReserva);
+    if(typeof ccSave==='function') ccSave();
+  }catch(e){}
+  // Atualiza a tela inteira com os dados recebidos
+  ensureMonthData(currentYear,currentMonth);
+  buildLists();
+  fillInputs();
+  recalcAll();
+  renderEmpList();
+  renderReceitasEmp();
+  renderFixosEmp();
+  calcEndividamento();
+  rodarDiagnostico();
+  if(typeof preencherFormPerfil==='function') preencherFormPerfil();
+  if(typeof ccRenderDashboard==='function') ccRenderDashboard();
+  var activeSecEl=document.querySelector('.section.active');
+  if(activeSecEl) ccShowSection(activeSecEl.id.replace('sec-',''));
+  return true;
+}
+
+// ---- Escreve o estado atual no arquivo vinculado ----
+function syncWriteToFile(){
+  if(!syncFileHandle) return Promise.resolve(false);
+  var payload=syncBuildPayload();
+  return syncFileHandle.requestPermission({mode:'readwrite'}).then(function(perm){
+    if(perm!=='granted') return false;
+    return syncFileHandle.createWritable().then(function(writable){
+      return writable.write(JSON.stringify(payload)).then(function(){return writable.close();});
+    }).then(function(){
+      syncLastSavedAt=payload.savedAt;
+      syncSetStatus('✅ Sincronizado agora mesmo · '+new Date(payload.savedAt).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}));
+      return true;
+    });
+  }).catch(function(err){
+    console.error('Erro ao escrever arquivo de sincronizacao:',err);
+    syncSetStatus('⚠️ Não foi possível salvar no arquivo. Tente "Sincronizar agora".');
+    return false;
+  });
+}
+
+// ---- Le o arquivo vinculado; aplica os dados se forem mais novos que os daqui ----
+function syncReadFromFile(forcar){
+  if(!syncFileHandle) return Promise.resolve(false);
+  return syncFileHandle.requestPermission({mode:'readwrite'}).then(function(perm){
+    if(perm!=='granted'){syncSetStatus('⚠️ Acesso ao arquivo não confirmado. Clique em "Sincronizar agora".');return null;}
+    return syncFileHandle.getFile();
+  }).then(function(file){
+    if(!file) return null;
+    return file.text();
+  }).then(function(text){
+    if(!text) return false;
+    var payload;
+    try{payload=JSON.parse(text);}catch(e){return false;}
+    if(!payload||payload.tipo!=='amcf_sync') return false;
+    if(forcar||(payload.savedAt||0)>syncLastSavedAt){
+      syncApplyPayload(payload);
+      showToast();
+      return true;
+    }
+    return false;
+  }).catch(function(err){
+    console.error('Erro ao ler arquivo de sincronizacao:',err);
+    return false;
+  });
+}
+
+function syncSetStatus(msg){
+  var el=document.getElementById('syncStatus');
+  if(el) el.textContent=msg;
+}
+
+// ---- Cria um arquivo NOVO (usar no primeiro aparelho que voce configurar) ----
+function syncCreateFile(){
+  if(!syncSupported()){alert('Esse recurso funciona apenas no Google Chrome ou Microsoft Edge, no computador.');return;}
+  window.showSaveFilePicker({
+    suggestedName:'amcf-sincronizacao.json',
+    types:[{description:'Arquivo de sincronizacao AMCF',accept:{'application/json':['.json']}}]
+  }).then(function(handle){
+    syncFileHandle=handle;
+    return syncWriteToFile();
+  }).then(function(){
+    return syncIdbSet('fileHandle',syncFileHandle);
+  }).then(function(){
+    syncRefreshUI();
+  }).catch(function(err){
+    if(err&&err.name==='AbortError') return;
+    console.error('Erro ao criar arquivo de sincronizacao:',err);
+    alert('Não foi possível criar o arquivo. Tente novamente.');
+  });
+}
+
+// ---- Abre um arquivo JA EXISTENTE (usar nos demais aparelhos, apontando pro mesmo arquivo do Dropbox) ----
+function syncOpenFile(){
+  if(!syncSupported()){alert('Esse recurso funciona apenas no Google Chrome ou Microsoft Edge, no computador.');return;}
+  window.showOpenFilePicker({
+    types:[{description:'Arquivo de sincronizacao AMCF',accept:{'application/json':['.json']}}]
+  }).then(function(handles){
+    syncFileHandle=handles[0];
+    return syncReadFromFile(true);
+  }).then(function(){
+    return syncIdbSet('fileHandle',syncFileHandle);
+  }).then(function(){
+    syncRefreshUI();
+  }).catch(function(err){
+    if(err&&err.name==='AbortError') return;
+    console.error('Erro ao abrir arquivo de sincronizacao:',err);
+    alert('Não foi possível abrir o arquivo. Tente novamente.');
+  });
+}
+
+// ---- Botao manual "Sincronizar agora": puxa o que tiver de novo e garante o arquivo atualizado ----
+function syncNow(){
+  syncSetStatus('🔄 Sincronizando...');
+  syncReadFromFile(false).then(function(){
+    return syncWriteToFile();
+  });
+}
+
+function syncDisconnect(){
+  if(!confirm('Desvincular o arquivo de sincronização?\n\nSeus dados continuam salvos normalmente neste aparelho, só param de ser atualizados automaticamente a partir do Dropbox.')) return;
+  syncFileHandle=null;
+  syncIdbSet('fileHandle',null);
+  syncRefreshUI();
+}
+
+function syncRefreshUI(){
+  var btnCreate=document.getElementById('syncCreateBtn');
+  var btnOpen=document.getElementById('syncOpenBtn');
+  var btnNow=document.getElementById('syncNowBtn');
+  var btnUnlink=document.getElementById('syncUnlinkBtn');
+  if(!syncSupported()){
+    if(btnCreate) btnCreate.style.display='none';
+    if(btnOpen) btnOpen.style.display='none';
+    if(btnNow) btnNow.style.display='none';
+    if(btnUnlink) btnUnlink.style.display='none';
+    syncSetStatus('Disponível apenas no Google Chrome ou Microsoft Edge, no computador.');
+    return;
+  }
+  if(syncFileHandle){
+    if(btnCreate) btnCreate.style.display='none';
+    if(btnOpen) btnOpen.style.display='none';
+    if(btnNow) btnNow.style.display='block';
+    if(btnUnlink) btnUnlink.style.display='block';
+    syncSetStatus('🔗 Arquivo vinculado: '+(syncFileHandle.name||'sincronizacao')+'. Sincroniza automaticamente a cada lançamento.');
+  } else {
+    if(btnCreate) btnCreate.style.display='block';
+    if(btnOpen) btnOpen.style.display='block';
+    if(btnNow) btnNow.style.display='none';
+    if(btnUnlink) btnUnlink.style.display='none';
+    syncSetStatus('Nenhum arquivo vinculado ainda.');
+  }
+}
+
+// ---- Ao abrir o app, tenta recuperar o vinculo salvo na sessao anterior ----
+function syncInit(){
+  if(!syncSupported()){syncRefreshUI();return;}
+  syncIdbGet('fileHandle').then(function(handle){
+    if(!handle){syncRefreshUI();return;}
+    return handle.queryPermission({mode:'readwrite'}).then(function(perm){
+      syncFileHandle=handle;
+      syncRefreshUI();
+      if(perm==='granted'){
+        syncReadFromFile(false);
+      } else {
+        syncSetStatus('🔗 Arquivo vinculado: '+(handle.name||'sincronizacao')+'. Clique em "Sincronizar agora" para confirmar o acesso.');
+      }
+    });
+  }).catch(function(){syncRefreshUI();});
+}
+
+// ---- Verifica se ha atualizacao do arquivo quando o usuario volta pra aba (ex: trocou de app e voltou) ----
+document.addEventListener('visibilitychange',function(){
+  if(document.visibilityState==='visible'&&syncFileHandle){
+    syncReadFromFile(false);
+  }
+});
+
 function loadData(){try{
   var saved=localStorage.getItem('amcf_data');
   if(saved){
@@ -3432,6 +3706,8 @@ function startApp(){
   rodarDiagnostico();
   // Finalizar init do módulo cartões (eventos)
   ccInitEvents();
+  // Sincronização entre dispositivos (se ja tiver sido vinculada antes)
+  syncInit();
   // Mostrar tela de seleção de módulo (sessão nova)
   if(!moduloSessaoIniciada){
     mostrarTelaModulo();
