@@ -149,6 +149,10 @@ body{font-family:'DM Sans',sans-serif;background:var(--navy);color:var(--white);
 .add-line-btn.orange-btn:hover{background:rgba(255,167,38,.22);}
 .add-line-btn.gold-btn{background:rgba(201,162,39,.12);color:var(--gold);border:1px solid rgba(201,162,39,.3);}
 .add-line-btn.gold-btn:hover{background:rgba(201,162,39,.22);}
+.copy-mes-bar{display:flex;align-items:center;gap:.5rem;padding:.6rem 1rem;background:rgba(255,255,255,.03);border-bottom:1px dashed rgba(201,162,39,.2);}
+.copy-mes-select{flex:1;background:rgba(255,255,255,.07);border:1px solid rgba(201,162,39,.3);border-radius:8px;color:var(--white);font-family:'DM Sans',sans-serif;font-size:.76rem;padding:.4rem .5rem;outline:none;}
+.copy-mes-btn{white-space:nowrap;background:rgba(201,162,39,.12);color:var(--gold);border:1px solid rgba(201,162,39,.3);border-radius:8px;font-family:'DM Sans',sans-serif;font-size:.76rem;font-weight:700;padding:.4rem .8rem;cursor:pointer;touch-action:manipulation;}
+.copy-mes-btn:active{opacity:.8;}
 .custom-row{background:rgba(201,162,39,.04);border-left:2px solid rgba(201,162,39,.3)!important;}
 .custom-name{cursor:pointer;color:rgba(255,220,120,.9)!important;}
 .custom-name:hover{color:var(--gold)!important;text-decoration:underline dotted;}
@@ -305,6 +309,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--navy);color:var(--white);
 .cc-lanc-actions{display:flex;flex-direction:column;gap:5px;flex-shrink:0;margin-left:2px;}
 .cc-lanc-del{background:rgba(239,83,80,.12);border:1px solid rgba(239,83,80,.2);color:#EF5350;border-radius:6px;width:22px;height:22px;font-size:.65rem;cursor:pointer;display:flex;align-items:center;justify-content:center;touch-action:manipulation;}
 .cc-lanc-edit{background:rgba(201,162,39,.12);border:1px solid rgba(201,162,39,.3);color:var(--gold);border-radius:6px;width:22px;height:22px;font-size:.65rem;cursor:pointer;display:flex;align-items:center;justify-content:center;touch-action:manipulation;}
+.cc-lanc-dup{background:rgba(45,93,191,.15);border:1px solid rgba(45,93,191,.4);color:#7FA8FF;border-radius:6px;width:22px;height:22px;font-size:.65rem;cursor:pointer;display:flex;align-items:center;justify-content:center;touch-action:manipulation;}
 .cc-btn-cancel-edit{width:100%;background:transparent;color:rgba(255,255,255,.55);border:1px solid rgba(255,255,255,.2);border-radius:10px;padding:.6rem;font-size:.8rem;font-weight:600;font-family:'DM Sans',sans-serif;cursor:pointer;margin-top:.5rem;touch-action:manipulation;}
 
 /* Cartões cadastrados */
@@ -740,6 +745,10 @@ body{font-family:'DM Sans',sans-serif;background:var(--navy);color:var(--white);
     <!-- RECEITAS -->
     <div class="section" id="sec-receitas">
       <div class="section-header green-h"><span>💰</span><h3>Receitas do Mês</h3><span class="total-badge" id="totalRecBadge">R$ 0</span></div>
+      <div class="copy-mes-bar">
+        <select class="copy-mes-select" id="copiarOrigem_receitas"></select>
+        <button class="copy-mes-btn" onclick="copiarMesAnterior('receitas')">📋 Copiar</button>
+      </div>
       <div class="items-list" id="listReceitas"></div>
       <div class="custom-lines-container" id="customLines_receitas"></div>
       <div class="add-line-bar">
@@ -752,6 +761,10 @@ body{font-family:'DM Sans',sans-serif;background:var(--navy);color:var(--white);
     <div class="section" id="sec-fixos">
       <div class="section-wrap" id="wrapFixos">
         <div class="section-header red-h"><span>🔒</span><h3>Gastos Fixos</h3><span class="total-badge" id="totalFixBadge">R$ 0</span></div>
+        <div class="copy-mes-bar">
+          <select class="copy-mes-select" id="copiarOrigem_fixos"></select>
+          <button class="copy-mes-btn" onclick="copiarMesAnterior('fixos')">📋 Copiar</button>
+        </div>
         <div class="items-list" id="listFixos"></div>
         <div class="custom-lines-container" id="customLines_fixos"></div>
         <div class="add-line-bar">
@@ -765,6 +778,10 @@ body{font-family:'DM Sans',sans-serif;background:var(--navy);color:var(--white);
     <div class="section" id="sec-variaveis">
       <div class="section-wrap" id="wrapVar">
         <div class="section-header orange-h"><span>🛒</span><h3>Gastos Variáveis</h3><span class="total-badge" id="totalVarBadge">R$ 0</span></div>
+        <div class="copy-mes-bar">
+          <select class="copy-mes-select" id="copiarOrigem_variaveis"></select>
+          <button class="copy-mes-btn" onclick="copiarMesAnterior('variaveis')">📋 Copiar</button>
+        </div>
         <div class="items-list" id="listVariaveis"></div>
         <div class="custom-lines-container" id="customLines_variaveis"></div>
         <div class="add-line-bar">
@@ -778,6 +795,10 @@ body{font-family:'DM Sans',sans-serif;background:var(--navy);color:var(--white);
     <div class="section" id="sec-cartao">
       <div class="section-wrap" id="wrapCC">
         <div class="section-header brown-h"><span>💳</span><h3>Cartão / Parcelas</h3><span class="total-badge" id="totalCCBadge">R$ 0</span></div>
+        <div class="copy-mes-bar">
+          <select class="copy-mes-select" id="copiarOrigem_cartao"></select>
+          <button class="copy-mes-btn" onclick="copiarMesAnterior('cartao')">📋 Copiar</button>
+        </div>
         <div class="items-list" id="listCartao"></div>
         <div class="custom-lines-container" id="customLines_cartao"></div>
         <div class="add-line-bar">
@@ -2923,11 +2944,16 @@ function ccRenderLancList(){
       +'<div class="cc-lanc-right"><div class="cc-lanc-val">'+ccFmt(valParcela)+'</div>'+totalInfo+badgeHtml+'</div>'
       +'<div class="cc-lanc-actions">'
       +'<button class="cc-lanc-edit" data-id="'+c.id+'" title="Editar lançamento">✏️</button>'
+      +'<button class="cc-lanc-dup" data-id="'+c.id+'" title="Duplicar no mês atual">📋</button>'
       +'<button class="cc-lanc-del" data-id="'+c.id+'" title="Excluir">✕</button>'
       +'</div>';
     div.querySelector('.cc-lanc-edit').onclick=function(){
       var id=this.getAttribute('data-id');
       ccEditarLancamento(id);
+    };
+    div.querySelector('.cc-lanc-dup').onclick=function(){
+      var id=this.getAttribute('data-id');
+      ccDuplicarLancamento(id);
     };
     div.querySelector('.cc-lanc-del').onclick=function(){
       var id=this.getAttribute('data-id');
@@ -2996,6 +3022,29 @@ function ccEditarLancamento(id){
 // Cancela a edição em andamento e limpa o formulário, sem salvar nada
 function ccCancelarEdicao(){
   ccResetForm();
+}
+
+// Preenche o formulário com a descrição/categoria/valor de um lançamento existente,
+// mas SEMPRE como um lançamento NOVO (à vista), no mês que está sendo visto agora.
+// Útil pra recriar rapidinho uma assinatura/mensalidade recorrente sem redigitar tudo.
+function ccDuplicarLancamento(id){
+  var compra=ccCompras.find(function(x){return x.id===id;});
+  if(!compra) return;
+  ccEditingId=null; // garante que vai CRIAR um lançamento novo, e não sobrescrever o original
+  ccSelectedCartao=compra.cartaoId;
+  ccRenderChips();
+  document.getElementById('ccFDesc').value=compra.desc;
+  document.getElementById('ccFCat').value=compra.cat;
+  document.getElementById('ccFValor').value=compra.valorTotal;
+  document.getElementById('ccFParcelas').value='1';
+  document.getElementById('ccFParcelaAtual').value='1';
+  ccUpdateParcelaPreview();
+  var btn=document.getElementById('ccBtnAdd');
+  if(btn) btn.textContent='+ Adicionar lançamento';
+  var btnCancel=document.getElementById('ccBtnCancelEdit');
+  if(btnCancel) btnCancel.style.display='none';
+  var formBox=document.querySelector('.cc-form-box');
+  if(formBox) formBox.scrollIntoView({behavior:'smooth',block:'start'});
 }
 
 // Limpa o formulário e devolve pro estado normal de "adicionar novo"
@@ -3508,6 +3557,56 @@ function fillInputs(){
   }
   document.getElementById('metaInput').value=d.meta;
   fillCustomLines();
+  popularSeletoresCopiaMes();
+}
+
+// Preenche os seletores "Copiar de..." com os ultimos 12 meses ANTERIORES ao mes que esta sendo visto
+function popularSeletoresCopiaMes(){
+  ['receitas','fixos','variaveis','cartao'].forEach(function(cat){
+    var sel=document.getElementById('copiarOrigem_'+cat);
+    if(!sel) return;
+    var valorAnterior=sel.value;
+    sel.innerHTML='';
+    for(var i=1;i<=12;i++){
+      var m=currentMonth-i, y=currentYear;
+      while(m<0){m+=12;y--;}
+      var opt=document.createElement('option');
+      opt.value=y+'-'+m;
+      opt.textContent=MESES[m]+'/'+y;
+      sel.appendChild(opt);
+    }
+    // Mantem a selecao anterior se ainda for uma opcao valida (ex: usuario ja tinha escolhido outro mes)
+    if(valorAnterior){
+      var existe=Array.prototype.some.call(sel.options,function(o){return o.value===valorAnterior;});
+      if(existe) sel.value=valorAnterior;
+    }
+  });
+}
+
+// Copia os valores de uma categoria inteira (receitas/fixos/variaveis/cartao) de um mes anterior pro mes atual
+function copiarMesAnterior(cat){
+  var sel=document.getElementById('copiarOrigem_'+cat);
+  if(!sel||!sel.value) return;
+  var partes=sel.value.split('-');
+  var srcYear=parseInt(partes[0]),srcMonth=parseInt(partes[1]);
+  var origem=ensureMonthData(srcYear,srcMonth);
+  var destino=ensureMonthData(currentYear,currentMonth);
+  var valoresOrigem=origem[cat]||[];
+  var temValorNaOrigem=valoresOrigem.some(function(v){return parseFloat(v)>0;});
+  if(!temValorNaOrigem){
+    alert('Não há valores lançados em '+MESES[srcMonth]+'/'+srcYear+' nesta aba.');
+    return;
+  }
+  var valoresAtuais=destino[cat]||[];
+  var temAlgoAtual=valoresAtuais.some(function(v){return parseFloat(v)>0;});
+  var msg='Copiar os valores de '+MESES[srcMonth]+'/'+srcYear+' para '+MESES[currentMonth]+'/'+currentYear+'?';
+  if(temAlgoAtual) msg+='\n\n⚠️ Isso vai SUBSTITUIR os valores que você já preencheu nesta aba, neste mês.';
+  if(!confirm(msg)) return;
+  destino[cat]=valoresOrigem.slice(); // copia os valores, nao a referencia do array
+  saveData();
+  fillInputs();
+  recalcAll();
+  showToast();
 }
 function saveValue(cat,idx,val){
   ensureMonthData(currentYear,currentMonth)[cat][idx]=parseFloat(val)||0;
