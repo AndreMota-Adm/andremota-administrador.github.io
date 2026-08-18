@@ -328,6 +328,8 @@ body{font-family:'DM Sans',sans-serif;background:var(--navy);color:var(--white);
 .cc-cartao-band{font-size:.75rem;color:var(--gold);background:rgba(201,162,39,.12);padding:.15rem .5rem;border-radius:10px;}
 .cc-cartao-lim{font-size:.78rem;color:rgba(255,255,255,.45);margin-bottom:8px;}
 .cc-btn-del{background:rgba(239,83,80,.1);border:1px solid rgba(239,83,80,.2);color:#EF5350;border-radius:8px;padding:.4rem .8rem;font-size:.75rem;cursor:pointer;touch-action:manipulation;}
+.cc-btn-edit-cartao{background:rgba(201,162,39,.1);border:1px solid rgba(201,162,39,.3);color:var(--gold);border-radius:8px;padding:.4rem .8rem;font-size:.75rem;cursor:pointer;touch-action:manipulation;}
+.cc-cartao-btns{display:flex;gap:.5rem;}
 
 /* Limite bar */
 .cc-limite-row{display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;}
@@ -1239,6 +1241,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--navy);color:var(--white);
           </div>
         </div>
         <button class="cc-btn-add" id="ccBtnAddCartao">+ Adicionar cartão</button>
+        <button class="cc-btn-cancel-edit" id="ccBtnCancelEditCartao" style="display:none;" onclick="ccCancelarEdicaoCartao()">Cancelar edição</button>
       </div>
       <div class="cc-sec-title">Meus cartões</div>
       <div id="ccCartoesList"></div>
@@ -2780,6 +2783,7 @@ var ccCompras=[];
 var ccCatsCustom=[];
 var ccSelectedCartao=null;
 var ccEditingId=null;
+var ccEditingCartaoId=null;
 var ccCurrentYear=new Date().getFullYear();
 
 function ccSave(){
@@ -2862,7 +2866,9 @@ function ccGetNumParcela(compra,mes,ano){
 function ccGetComprasMes(mes,ano,cartaoId){
   return ccCompras.filter(function(c){
     if(cartaoId&&c.cartaoId!==cartaoId) return false;
-    return ccGetValorParaMes(c,mes,ano)>0;
+    // Usa "esta ativa" (nao "valor>0"), assim um mes isento (ajustado pra R$0) continua aparecendo na lista,
+    // em vez de sumir como se o lancamento nao existisse
+    return ccEstaAtivaNoMes(c,mes,ano);
   });
 }
 
@@ -3005,7 +3011,12 @@ function ccRenderLancList(){
       : (c.overrides&&numParcelaAtual!==null&&c.overrides[numParcelaAtual]!==undefined);
     var badgeHtml,totalInfo;
     if(c.recorrente){
-      badgeHtml='<div class="cc-lanc-badge cc-lanc-badge-fixo">🔁 Fixo mensal'+(foiAjustada?' · ajustado':'')+'</div>';
+      var estaIsento=foiAjustada&&valParcela===0;
+      if(estaIsento){
+        badgeHtml='<div class="cc-lanc-badge cc-lanc-badge-fixo">🎁 Isento este mês</div>';
+      } else {
+        badgeHtml='<div class="cc-lanc-badge cc-lanc-badge-fixo">🔁 Fixo mensal'+(foiAjustada?' · ajustado':'')+'</div>';
+      }
       totalInfo='';
     } else if(c.parcelas>1){
       badgeHtml='<div class="cc-lanc-badge">'+numParcelaAtual+'ª/'+c.parcelas+'x'+(foiAjustada?' · ajustada':'')+'</div>';
@@ -3121,7 +3132,7 @@ function ccAjustarParcela(id,mes,ano){
   var valorAtual=ccGetValorParaMes(compra,mes,ano);
 
   if(compra.recorrente){
-    var msg='Ajustar o valor de '+MESES[mes]+'/'+ano+' pro lançamento fixo "'+compra.desc+'".\n\nValor atual: '+ccFmt(valorAtual)+'\n\nDigite o novo valor (deixe em branco pra voltar ao valor automático):';
+    var msg='Ajustar o valor de '+MESES[mes]+'/'+ano+' pro lançamento fixo "'+compra.desc+'".\n\nValor atual: '+ccFmt(valorAtual)+'\n\nDigite o novo valor (digite 0 se foi isento/bonificado neste mês, ou deixe em branco pra voltar ao valor automático):';
     var resposta=prompt(msg,valorAtual.toFixed(2).replace('.',','));
     if(resposta===null) return;
     resposta=resposta.trim();
@@ -3422,13 +3433,18 @@ function ccRenderCartoes(){
       div.className='cc-cartao-card';
       var limHtml=c.limite?'<div class="cc-cartao-lim">Limite: '+ccFmt(c.limite)+'</div>':'<div class="cc-cartao-lim">Sem limite configurado</div>';
       div.innerHTML='<div class="cc-cartao-card-top"><span class="cc-cartao-nome">'+c.nome+'</span><span class="cc-cartao-band">'+c.bandeira+'</span></div>'
-        +limHtml+'<button class="cc-btn-del" data-id="'+c.id+'">🗑️ Remover</button>';
+        +limHtml+'<div class="cc-cartao-btns"><button class="cc-btn-edit-cartao" data-id="'+c.id+'">✏️ Editar</button><button class="cc-btn-del" data-id="'+c.id+'">🗑️ Remover</button></div>';
+      div.querySelector('.cc-btn-edit-cartao').onclick=function(){
+        var id=this.getAttribute('data-id');
+        ccEditarCartao(id);
+      };
       div.querySelector('.cc-btn-del').onclick=function(){
         var id=this.getAttribute('data-id');
         if(!confirm('Remover este cartão e todos os lançamentos?')) return;
         ccCartoes=ccCartoes.filter(function(x){return x.id!==id;});
         ccCompras=ccCompras.filter(function(x){return x.cartaoId!==id;});
         if(ccSelectedCartao===id) ccSelectedCartao=ccCartoes.length>0?ccCartoes[0].id:null;
+        if(ccEditingCartaoId===id) ccResetCartaoForm();
         ccSave(); ccRenderCartoes(); ccRenderDashboard();
       };
       list.appendChild(div);
@@ -3442,13 +3458,55 @@ function ccAddCartao(){
   var bandeira=document.getElementById('ccCBandeira').value;
   var limite=parseFloat(document.getElementById('ccCLimite').value)||0;
   if(!nome) return;
-  if(ccCartoes.find(function(c){return c.nome.toLowerCase()===nome.toLowerCase();})) return;
-  ccCartoes.push({id:ccUid(),nome:nome,bandeira:bandeira,limite:limite});
+  // Verifica nome duplicado, ignorando o proprio cartao quando estiver em modo edição
+  var duplicado=ccCartoes.find(function(c){return c.nome.toLowerCase()===nome.toLowerCase()&&c.id!==ccEditingCartaoId;});
+  if(duplicado){alert('Já existe um cartão com esse nome.');return;}
+  if(ccEditingCartaoId){
+    // Modo edição: atualiza o cartão existente SEM trocar o id — os lançamentos continuam ligados normalmente
+    var cartao=ccCartoes.find(function(c){return c.id===ccEditingCartaoId;});
+    if(cartao){
+      cartao.nome=nome;
+      cartao.bandeira=bandeira;
+      cartao.limite=limite;
+    }
+  } else {
+    ccCartoes.push({id:ccUid(),nome:nome,bandeira:bandeira,limite:limite});
+  }
   ccSave();
-  document.getElementById('ccCNome').value='';
-  document.getElementById('ccCLimite').value='';
+  ccResetCartaoForm();
   if(!ccSelectedCartao) ccSelectedCartao=ccCartoes[0].id;
   ccRenderCartoes(); ccRenderDashboard(); ccRenderChips();
+}
+
+// Preenche o formulário de cartão com os dados de um cartão existente, pra editar nome/bandeira/limite
+function ccEditarCartao(id){
+  var cartao=ccCartoes.find(function(c){return c.id===id;});
+  if(!cartao) return;
+  ccEditingCartaoId=cartao.id;
+  document.getElementById('ccCNome').value=cartao.nome;
+  document.getElementById('ccCBandeira').value=cartao.bandeira;
+  document.getElementById('ccCLimite').value=cartao.limite||'';
+  var btn=document.getElementById('ccBtnAddCartao');
+  if(btn) btn.textContent='💾 Salvar alterações';
+  var btnCancel=document.getElementById('ccBtnCancelEditCartao');
+  if(btnCancel) btnCancel.style.display='block';
+  var formBoxes=document.querySelectorAll('#sec-cc-cartoes .cc-form-box');
+  if(formBoxes[0]) formBoxes[0].scrollIntoView({behavior:'smooth',block:'start'});
+}
+
+function ccCancelarEdicaoCartao(){
+  ccResetCartaoForm();
+}
+
+function ccResetCartaoForm(){
+  ccEditingCartaoId=null;
+  var btn=document.getElementById('ccBtnAddCartao');
+  if(btn) btn.textContent='+ Adicionar cartão';
+  var btnCancel=document.getElementById('ccBtnCancelEditCartao');
+  if(btnCancel) btnCancel.style.display='none';
+  document.getElementById('ccCNome').value='';
+  document.getElementById('ccCLimite').value='';
+  document.getElementById('ccCBandeira').value='Visa';
 }
 
 function ccInitEvents(){
