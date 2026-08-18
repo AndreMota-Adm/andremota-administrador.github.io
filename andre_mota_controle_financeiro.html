@@ -307,6 +307,14 @@ body{font-family:'DM Sans',sans-serif;background:var(--navy);color:var(--white);
 .cc-lanc-info2{font-size:.7rem;color:rgba(255,255,255,.4);margin-top:.1rem;}
 .cc-lanc-badge{font-size:.65rem;background:rgba(201,162,39,.15);color:var(--gold);padding:.15rem .45rem;border-radius:10px;margin-top:.2rem;display:inline-block;}
 .cc-lanc-ajustar-btn{display:block;margin-top:.3rem;background:rgba(45,93,191,.12);border:1px solid rgba(45,93,191,.3);color:#7FA8FF;border-radius:6px;font-size:.62rem;font-weight:600;font-family:'DM Sans',sans-serif;padding:.18rem .45rem;cursor:pointer;touch-action:manipulation;}
+.cc-toggle-fixo{display:flex;align-items:center;gap:.6rem;padding:.65rem .8rem;background:rgba(45,93,191,.08);border:1px solid rgba(45,93,191,.25);border-radius:10px;margin-bottom:.2rem;cursor:pointer;touch-action:manipulation;}
+.cc-toggle-fixo input{display:none;}
+.cc-toggle-switch{width:38px;height:20px;background:rgba(255,255,255,.15);border-radius:20px;position:relative;flex-shrink:0;transition:background .2s;}
+.cc-toggle-switch::after{content:'';position:absolute;top:2px;left:2px;width:16px;height:16px;background:#fff;border-radius:50%;transition:transform .2s;}
+.cc-toggle-fixo input:checked+.cc-toggle-switch{background:#7FA8FF;}
+.cc-toggle-fixo input:checked+.cc-toggle-switch::after{transform:translateX(18px);}
+.cc-toggle-lbl{font-size:.78rem;color:rgba(255,255,255,.85);line-height:1.3;}
+.cc-lanc-badge-fixo{background:rgba(45,93,191,.18);color:#7FA8FF;}
 .cc-lanc-actions{display:flex;flex-direction:column;gap:5px;flex-shrink:0;margin-left:2px;}
 .cc-lanc-del{background:rgba(239,83,80,.12);border:1px solid rgba(239,83,80,.2);color:#EF5350;border-radius:6px;width:22px;height:22px;font-size:.65rem;cursor:pointer;display:flex;align-items:center;justify-content:center;touch-action:manipulation;}
 .cc-lanc-edit{background:rgba(201,162,39,.12);border:1px solid rgba(201,162,39,.3);color:var(--gold);border-radius:6px;width:22px;height:22px;font-size:.65rem;cursor:pointer;display:flex;align-items:center;justify-content:center;touch-action:manipulation;}
@@ -1145,7 +1153,14 @@ body{font-family:'DM Sans',sans-serif;background:var(--navy);color:var(--white);
             <input class="cc-finput" id="ccFValor" type="number" step="0.01" min="0" placeholder="0,00">
           </div>
         </div>
-        <div class="cc-form-row">
+        <div class="cc-form-row full">
+          <label class="cc-toggle-fixo" id="ccToggleFixoWrap">
+            <input type="checkbox" id="ccFRecorrente" onchange="ccToggleRecorrente()">
+            <span class="cc-toggle-switch"></span>
+            <span class="cc-toggle-lbl">🔁 Custo fixo — repete todo mês automaticamente (sem data pra terminar)</span>
+          </label>
+        </div>
+        <div class="cc-form-row" id="ccParcelasRow">
           <div class="cc-form-group">
             <label class="cc-form-lbl">Nº de parcelas</label>
             <input class="cc-finput" id="ccFParcelas" type="number" min="1" max="60" value="1" placeholder="Ex: 15">
@@ -2799,27 +2814,49 @@ function ccFmt(v){
 
 function ccUid(){return Date.now().toString(36)+Math.random().toString(36).substr(2);}
 
-function ccGetValorParaMes(compra,mes,ano){
-  var mesAbsCompra=compra.anoInicio*12+compra.mesInicio;
+// Diz se uma compra esta ativa (deve aparecer) num mes/ano especifico — vale tanto pra parcelado quanto pra fixo recorrente
+function ccEstaAtivaNoMes(compra,mes,ano){
   var mesAbsAlvo=ano*12+mes;
-  var offset=mesAbsAlvo-mesAbsCompra;
-  var numParcela=compra.parcelaAtual+offset;
-  if(numParcela>=1&&numParcela<=compra.parcelas){
-    // Se essa parcela especifica tiver sido ajustada manualmente (ex: negociacao), usa o valor ajustado
-    if(compra.overrides&&compra.overrides[numParcela]!==undefined) return compra.overrides[numParcela];
-    return compra.valorTotal/compra.parcelas;
+  var mesAbsInicio=compra.anoInicio*12+compra.mesInicio;
+  if(mesAbsAlvo<mesAbsInicio) return false;
+  if(compra.recorrente){
+    // Fixo recorrente: ativo indefinidamente, a nao ser que tenha sido encerrado (mesFim/anoFim definidos)
+    if(compra.anoFim!=null&&compra.mesFim!=null){
+      var mesAbsFim=compra.anoFim*12+compra.mesFim;
+      if(mesAbsAlvo>mesAbsFim) return false;
+    }
+    return true;
   }
-  return 0;
+  // Parcelado: so ativo enquanto ainda houver parcela dentro do range 1..parcelas
+  var offset=mesAbsAlvo-mesAbsInicio;
+  var numParcela=compra.parcelaAtual+offset;
+  return numParcela>=1&&numParcela<=compra.parcelas;
 }
 
-// Retorna o numero da parcela (1, 2, 3...) de uma compra num mes/ano especifico (ou null se nao estiver ativa nesse mes)
+function ccGetValorParaMes(compra,mes,ano){
+  if(!ccEstaAtivaNoMes(compra,mes,ano)) return 0;
+  var mesAbsAlvo=ano*12+mes;
+  if(compra.recorrente){
+    // Se esse mes especifico tiver sido ajustado manualmente, usa o valor ajustado; senao usa o valor fixo padrao
+    if(compra.overrides&&compra.overrides[mesAbsAlvo]!==undefined) return compra.overrides[mesAbsAlvo];
+    return compra.valorTotal;
+  }
+  var mesAbsCompra=compra.anoInicio*12+compra.mesInicio;
+  var offset=mesAbsAlvo-mesAbsCompra;
+  var numParcela=compra.parcelaAtual+offset;
+  // Se essa parcela especifica tiver sido ajustada manualmente (ex: negociacao), usa o valor ajustado
+  if(compra.overrides&&compra.overrides[numParcela]!==undefined) return compra.overrides[numParcela];
+  return compra.valorTotal/compra.parcelas;
+}
+
+// Retorna o numero da parcela (1, 2, 3...) de uma compra PARCELADA num mes/ano (null se nao ativa, ou se for fixo recorrente)
 function ccGetNumParcela(compra,mes,ano){
+  if(compra.recorrente) return null;
+  if(!ccEstaAtivaNoMes(compra,mes,ano)) return null;
   var mesAbsCompra=compra.anoInicio*12+compra.mesInicio;
   var mesAbsAlvo=ano*12+mes;
   var offset=mesAbsAlvo-mesAbsCompra;
-  var numParcela=compra.parcelaAtual+offset;
-  if(numParcela>=1&&numParcela<=compra.parcelas) return numParcela;
-  return null;
+  return compra.parcelaAtual+offset;
 }
 
 function ccGetComprasMes(mes,ano,cartaoId){
@@ -2883,21 +2920,42 @@ function ccAddCat(){
   document.getElementById('ccCatNome').value='';
 }
 
+// Mostra/esconde os campos de parcelas conforme o toggle de "custo fixo recorrente"
+function ccToggleRecorrente(){
+  var chk=document.getElementById('ccFRecorrente');
+  var row=document.getElementById('ccParcelasRow');
+  if(!chk||!row) return;
+  if(chk.checked){
+    row.style.display='none';
+    document.getElementById('ccFParcelas').value='1';
+    document.getElementById('ccFParcelaAtual').value='1';
+  } else {
+    row.style.display='flex';
+  }
+  ccUpdateParcelaPreview();
+}
+
 function ccUpdateParcelaPreview(){
   var valor=parseFloat(document.getElementById('ccFValor').value)||0;
-  var parcelas=parseInt(document.getElementById('ccFParcelas').value)||1;
-  var parcelaAtual=parseInt(document.getElementById('ccFParcelaAtual').value)||1;
+  var recorrenteChk=document.getElementById('ccFRecorrente');
+  var recorrente=recorrenteChk&&recorrenteChk.checked;
   var prev=document.getElementById('ccParcelaPreview');
   if(!prev) return;
   if(valor>0){
-    var valorParcela=valor/parcelas;
-    if(parcelas===1){
-      prev.textContent='À vista: '+ccFmt(valor);
+    if(recorrente){
+      prev.textContent='🔁 '+ccFmt(valor)+'/mês, repetindo automaticamente todo mês';
     } else {
-      prev.textContent=ccFmt(valorParcela)+'/mês · Parcela '+parcelaAtual+'/'+parcelas+' · Total: '+ccFmt(valor);
+      var parcelas=parseInt(document.getElementById('ccFParcelas').value)||1;
+      var parcelaAtual=parseInt(document.getElementById('ccFParcelaAtual').value)||1;
+      var valorParcela=valor/parcelas;
+      if(parcelas===1){
+        prev.textContent='À vista: '+ccFmt(valor);
+      } else {
+        prev.textContent=ccFmt(valorParcela)+'/mês · Parcela '+parcelaAtual+'/'+parcelas+' · Total: '+ccFmt(valor);
+      }
     }
   } else {
-    prev.textContent='Preencha o valor e as parcelas';
+    prev.textContent=recorrente?'Preencha o valor':'Preencha o valor e as parcelas';
   }
 }
 
@@ -2940,13 +2998,23 @@ function ccRenderLancList(){
     var valParcela=ccGetValorParaMes(c,currentMonth,ccCurrentYear);
     var div=document.createElement('div');
     div.className='cc-lanc-item';
-    var mesAbsCompra=c.anoInicio*12+c.mesInicio;
     var mesAbsAtual=ccCurrentYear*12+currentMonth;
-    var numParcelaAtual=c.parcelaAtual+(mesAbsAtual-mesAbsCompra);
-    var foiAjustada=c.overrides&&c.overrides[numParcelaAtual]!==undefined;
-    var badgeHtml=c.parcelas>1?'<div class="cc-lanc-badge">'+numParcelaAtual+'ª/'+c.parcelas+'x'+(foiAjustada?' · ajustada':'')+'</div>':'<div class="cc-lanc-badge">À vista</div>';
-    var totalInfo=c.parcelas>1?'<div class="cc-lanc-info2">Total: '+ccFmt(c.valorTotal)+'</div>':'';
-    var btnAjustarHtml=c.parcelas>1?'<button class="cc-lanc-ajustar-btn" data-id="'+c.id+'" title="Ajustar valor só desta parcela">💲 Ajustar</button>':'';
+    var numParcelaAtual=ccGetNumParcela(c,currentMonth,ccCurrentYear);
+    var foiAjustada=c.recorrente
+      ? (c.overrides&&c.overrides[mesAbsAtual]!==undefined)
+      : (c.overrides&&numParcelaAtual!==null&&c.overrides[numParcelaAtual]!==undefined);
+    var badgeHtml,totalInfo;
+    if(c.recorrente){
+      badgeHtml='<div class="cc-lanc-badge cc-lanc-badge-fixo">🔁 Fixo mensal'+(foiAjustada?' · ajustado':'')+'</div>';
+      totalInfo='';
+    } else if(c.parcelas>1){
+      badgeHtml='<div class="cc-lanc-badge">'+numParcelaAtual+'ª/'+c.parcelas+'x'+(foiAjustada?' · ajustada':'')+'</div>';
+      totalInfo='<div class="cc-lanc-info2">Total: '+ccFmt(c.valorTotal)+'</div>';
+    } else {
+      badgeHtml='<div class="cc-lanc-badge">À vista</div>';
+      totalInfo='';
+    }
+    var btnAjustarHtml=(c.parcelas>1||c.recorrente)?'<button class="cc-lanc-ajustar-btn" data-id="'+c.id+'" title="Ajustar valor deste mês">💲 Ajustar</button>':'';
     div.innerHTML='<div class="cc-lanc-icon">'+ccGetCatIcon(c.cat)+'</div>'
       +'<div class="cc-lanc-info"><div class="cc-lanc-desc">'+c.desc+'</div><div class="cc-lanc-cat">'+c.cat+'</div></div>'
       +'<div class="cc-lanc-right"><div class="cc-lanc-val">'+ccFmt(valParcela)+'</div>'+totalInfo+badgeHtml+btnAjustarHtml+'</div>'
@@ -2984,8 +3052,9 @@ function ccAddLancamento(){
   var desc=document.getElementById('ccFDesc').value.trim();
   var cat=document.getElementById('ccFCat').value;
   var valor=parseFloat(document.getElementById('ccFValor').value)||0;
-  var parcelas=parseInt(document.getElementById('ccFParcelas').value)||1;
-  var parcelaAtual=parseInt(document.getElementById('ccFParcelaAtual').value)||1;
+  var recorrente=document.getElementById('ccFRecorrente').checked;
+  var parcelas=recorrente?1:(parseInt(document.getElementById('ccFParcelas').value)||1);
+  var parcelaAtual=recorrente?1:(parseInt(document.getElementById('ccFParcelaAtual').value)||1);
   if(parcelas<1) parcelas=1;
   if(parcelaAtual<1) parcelaAtual=1;
   if(!desc||valor<=0||parcelaAtual>parcelas) return;
@@ -2997,13 +3066,16 @@ function ccAddLancamento(){
       compra.desc=desc;
       compra.cat=cat;
       compra.valorTotal=valor;
+      compra.recorrente=recorrente;
       compra.parcelas=parcelas;
       compra.parcelaAtual=parcelaAtual;
+      if(!recorrente){compra.mesFim=null;compra.anoFim=null;}
     }
   } else {
     ccCompras.push({
       id:ccUid(),cartaoId:ccSelectedCartao,desc:desc,cat:cat,
       valorTotal:valor,parcelas:parcelas,parcelaAtual:parcelaAtual,
+      recorrente:recorrente,mesFim:null,anoFim:null,
       mesInicio:currentMonth,anoInicio:ccCurrentYear
     });
   }
@@ -3024,9 +3096,10 @@ function ccEditarLancamento(id){
   document.getElementById('ccFDesc').value=compra.desc;
   document.getElementById('ccFCat').value=compra.cat;
   document.getElementById('ccFValor').value=compra.valorTotal;
+  document.getElementById('ccFRecorrente').checked=!!compra.recorrente;
   document.getElementById('ccFParcelas').value=compra.parcelas;
   document.getElementById('ccFParcelaAtual').value=compra.parcelaAtual;
-  ccUpdateParcelaPreview();
+  ccToggleRecorrente();
   var btn=document.getElementById('ccBtnAdd');
   if(btn) btn.textContent='💾 Salvar alterações';
   var btnCancel=document.getElementById('ccBtnCancelEdit');
@@ -3040,25 +3113,61 @@ function ccCancelarEdicao(){
   ccResetForm();
 }
 
-// Ajusta o valor de UMA parcela especifica (ex: negociacao reduziu so a parcela deste mes), sem mexer nas outras
+// Ajusta o valor de um lançamento num mes especifico — funciona tanto pra parcela avulsa quanto pra custo fixo recorrente
 function ccAjustarParcela(id,mes,ano){
   var compra=ccCompras.find(function(x){return x.id===id;});
   if(!compra) return;
-  var numParcela=ccGetNumParcela(compra,mes,ano);
-  if(!numParcela){alert('Esta compra não tem parcela ativa neste mês.');return;}
+  if(!ccEstaAtivaNoMes(compra,mes,ano)){alert('Este lançamento não está ativo neste mês.');return;}
   var valorAtual=ccGetValorParaMes(compra,mes,ano);
-  var valorPadrao=compra.valorTotal/compra.parcelas;
-  var msg='Ajustar o valor só da '+numParcela+'ª parcela ('+MESES[mes]+'/'+ano+').\n\nValor automático (total ÷ parcelas): '+ccFmt(valorPadrao)+'\n\nDigite o novo valor desta parcela, ou deixe em branco para voltar ao automático:';
-  var resposta=prompt(msg,valorAtual.toFixed(2).replace('.',','));
-  if(resposta===null) return; // usuario cancelou, nao mexe em nada
-  resposta=resposta.trim();
-  if(!compra.overrides) compra.overrides={};
-  if(resposta===''){
-    delete compra.overrides[numParcela];
+
+  if(compra.recorrente){
+    var msg='Ajustar o valor de '+MESES[mes]+'/'+ano+' pro lançamento fixo "'+compra.desc+'".\n\nValor atual: '+ccFmt(valorAtual)+'\n\nDigite o novo valor (deixe em branco pra voltar ao valor automático):';
+    var resposta=prompt(msg,valorAtual.toFixed(2).replace('.',','));
+    if(resposta===null) return;
+    resposta=resposta.trim();
+    var mesAbsAlvo=ano*12+mes;
+    if(resposta===''){
+      if(compra.overrides) delete compra.overrides[mesAbsAlvo];
+    } else {
+      var novoValor=parseFloat(resposta.replace(',','.'));
+      if(isNaN(novoValor)||novoValor<0){alert('Valor inválido.');return;}
+      var aplicarEmDiante=confirm('Aplicar esse valor também nos meses seguintes, a partir de '+MESES[mes]+'/'+ano+'?\n\nOK = sim, muda daqui pra frente\nCancelar = não, ajustar só '+MESES[mes]+'/'+ano);
+      if(aplicarEmDiante){
+        var mesAbsInicio=compra.anoInicio*12+compra.mesInicio;
+        if(mesAbsInicio<mesAbsAlvo){
+          // Encerra a definicao antiga no mes anterior, e comeca uma nova recorrencia a partir de agora com o valor atualizado
+          var mesAnt=mes-1,anoAnt=ano;
+          if(mesAnt<0){mesAnt=11;anoAnt--;}
+          compra.mesFim=mesAnt; compra.anoFim=anoAnt;
+          ccCompras.push({
+            id:ccUid(),cartaoId:compra.cartaoId,desc:compra.desc,cat:compra.cat,
+            valorTotal:novoValor,recorrente:true,parcelas:1,parcelaAtual:1,
+            mesInicio:mes,anoInicio:ano,mesFim:null,anoFim:null
+          });
+        } else {
+          // A recorrencia comecou justo neste mes: so atualiza o valor base, sem precisar criar outra
+          compra.valorTotal=novoValor;
+        }
+      } else {
+        if(!compra.overrides) compra.overrides={};
+        compra.overrides[mesAbsAlvo]=novoValor;
+      }
+    }
   } else {
-    var novoValor=parseFloat(resposta.replace(',','.'));
-    if(isNaN(novoValor)||novoValor<0){alert('Valor inválido.');return;}
-    compra.overrides[numParcela]=novoValor;
+    var numParcela=ccGetNumParcela(compra,mes,ano);
+    var valorPadrao=compra.valorTotal/compra.parcelas;
+    var msg2='Ajustar o valor só da '+numParcela+'ª parcela ('+MESES[mes]+'/'+ano+').\n\nValor automático (total ÷ parcelas): '+ccFmt(valorPadrao)+'\n\nDigite o novo valor desta parcela, ou deixe em branco para voltar ao automático:';
+    var resposta2=prompt(msg2,valorAtual.toFixed(2).replace('.',','));
+    if(resposta2===null) return;
+    resposta2=resposta2.trim();
+    if(!compra.overrides) compra.overrides={};
+    if(resposta2===''){
+      delete compra.overrides[numParcela];
+    } else {
+      var novoValor2=parseFloat(resposta2.replace(',','.'));
+      if(isNaN(novoValor2)||novoValor2<0){alert('Valor inválido.');return;}
+      compra.overrides[numParcela]=novoValor2;
+    }
   }
   ccSave();
   ccRenderLancList();
@@ -3067,8 +3176,8 @@ function ccAjustarParcela(id,mes,ano){
 }
 
 // Preenche o formulário com a descrição/categoria/valor de um lançamento existente,
-// mas SEMPRE como um lançamento NOVO (à vista), no mês que está sendo visto agora.
-// Útil pra recriar rapidinho uma assinatura/mensalidade recorrente sem redigitar tudo.
+// mas SEMPRE como um lançamento NOVO avulso (à vista), no mês que está sendo visto agora.
+// Útil pra lançar uma cobrança extra pontual parecida com outra já existente.
 function ccDuplicarLancamento(id){
   var compra=ccCompras.find(function(x){return x.id===id;});
   if(!compra) return;
@@ -3078,9 +3187,10 @@ function ccDuplicarLancamento(id){
   document.getElementById('ccFDesc').value=compra.desc;
   document.getElementById('ccFCat').value=compra.cat;
   document.getElementById('ccFValor').value=compra.valorTotal;
+  document.getElementById('ccFRecorrente').checked=false;
   document.getElementById('ccFParcelas').value='1';
   document.getElementById('ccFParcelaAtual').value='1';
-  ccUpdateParcelaPreview();
+  ccToggleRecorrente();
   var btn=document.getElementById('ccBtnAdd');
   if(btn) btn.textContent='+ Adicionar lançamento';
   var btnCancel=document.getElementById('ccBtnCancelEdit');
@@ -3098,9 +3208,10 @@ function ccResetForm(){
   if(btnCancel) btnCancel.style.display='none';
   document.getElementById('ccFDesc').value='';
   document.getElementById('ccFValor').value='';
+  document.getElementById('ccFRecorrente').checked=false;
   document.getElementById('ccFParcelas').value='1';
   document.getElementById('ccFParcelaAtual').value='1';
-  ccUpdateParcelaPreview();
+  ccToggleRecorrente();
 }
 
 function ccRenderDashboard(){
@@ -3113,7 +3224,7 @@ function ccRenderDashboard(){
     var v=ccGetValorParaMes(c,currentMonth,ccCurrentYear);
     cartoesUsados[c.cartaoId]=(cartoesUsados[c.cartaoId]||0)+v;
     catTotals[c.cat]=(catTotals[c.cat]||0)+v;
-    if(c.parcelas>1) parcelasAtivas++;
+    if(c.parcelas>1||c.recorrente) parcelasAtivas++;
   });
   var elTotal=document.getElementById('ccDashTotal');
   var elSub=document.getElementById('ccDashSub');
@@ -3232,10 +3343,8 @@ function ccRenderResumo(){
         detail.className='cc-cat-detail';
         d.items.forEach(function(comp){
           var vp=ccGetValorParaMes(comp,currentMonth,ccCurrentYear);
-          var mesAbsCompra=comp.anoInicio*12+comp.mesInicio;
-          var mesAbsAtual=ccCurrentYear*12+currentMonth;
-          var numParc=comp.parcelaAtual+(mesAbsAtual-mesAbsCompra);
-          var parcInfo=comp.parcelas>1?numParc+'ª/'+comp.parcelas+'x · Total: '+ccFmt(comp.valorTotal):'À vista';
+          var numParc=ccGetNumParcela(comp,currentMonth,ccCurrentYear);
+          var parcInfo=comp.recorrente?'🔁 Fixo mensal':(comp.parcelas>1?numParc+'ª/'+comp.parcelas+'x · Total: '+ccFmt(comp.valorTotal):'À vista');
           detail.innerHTML+='<div class="cc-cat-detail-item"><div class="cc-cat-detail-desc">'+comp.desc+'</div>'
             +'<div class="cc-cat-detail-right"><div class="cc-cat-detail-val">'+ccFmt(vp)+'</div><div class="cc-cat-detail-parc">'+parcInfo+'</div></div></div>';
         });
@@ -3260,8 +3369,14 @@ function ccRenderRelatorio(){
   var anosComDados={};
   ccCompras.forEach(function(c){
     anosComDados[c.anoInicio]=true;
-    var mesAbsUltimo=c.anoInicio*12+c.mesInicio+(c.parcelas-c.parcelaAtual);
-    anosComDados[Math.floor(mesAbsUltimo/12)]=true;
+    var anoFinal;
+    if(c.recorrente){
+      anoFinal=(c.anoFim!=null)?c.anoFim:ccCurrentYear;
+    } else {
+      var mesAbsUltimo=c.anoInicio*12+c.mesInicio+(c.parcelas-c.parcelaAtual);
+      anoFinal=Math.floor(mesAbsUltimo/12);
+    }
+    anosComDados[anoFinal]=true;
   });
   anosComDados[ccCurrentYear]=true;
   var anos=Object.keys(anosComDados).map(Number).sort(function(a,b){return b-a;});
