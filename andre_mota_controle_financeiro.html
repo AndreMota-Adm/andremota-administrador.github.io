@@ -3167,7 +3167,7 @@ function ccAjustarParcela(id,mes,ano){
   } else {
     var numParcela=ccGetNumParcela(compra,mes,ano);
     var valorPadrao=compra.valorTotal/compra.parcelas;
-    var msg2='Ajustar o valor só da '+numParcela+'ª parcela ('+MESES[mes]+'/'+ano+').\n\nValor automático (total ÷ parcelas): '+ccFmt(valorPadrao)+'\n\nDigite o novo valor desta parcela, ou deixe em branco para voltar ao automático:';
+    var msg2='Ajustar o valor da '+numParcela+'ª parcela ('+MESES[mes]+'/'+ano+') de "'+compra.desc+'".\n\nValor automático (total ÷ parcelas): '+ccFmt(valorPadrao)+'\n\nDigite o novo valor, ou deixe em branco para voltar ao automático:';
     var resposta2=prompt(msg2,valorAtual.toFixed(2).replace('.',','));
     if(resposta2===null) return;
     resposta2=resposta2.trim();
@@ -3177,7 +3177,19 @@ function ccAjustarParcela(id,mes,ano){
     } else {
       var novoValor2=parseFloat(resposta2.replace(',','.'));
       if(isNaN(novoValor2)||novoValor2<0){alert('Valor inválido.');return;}
-      compra.overrides[numParcela]=novoValor2;
+      if(numParcela<compra.parcelas){
+        var aplicarEmDiante2=confirm('Aplicar esse valor também nas parcelas seguintes (da '+numParcela+'ª até a '+compra.parcelas+'ª — ex: reajuste que vale dali em diante)?\n\nOK = sim, muda daqui pra frente\nCancelar = não, só a '+numParcela+'ª parcela ('+MESES[mes]+'/'+ano+')');
+        if(aplicarEmDiante2){
+          for(var p=numParcela;p<=compra.parcelas;p++){
+            compra.overrides[p]=novoValor2;
+          }
+        } else {
+          compra.overrides[numParcela]=novoValor2;
+        }
+      } else {
+        // E a ultima parcela, nao ha "parcelas seguintes" pra perguntar
+        compra.overrides[numParcela]=novoValor2;
+      }
     }
   }
   ccSave();
