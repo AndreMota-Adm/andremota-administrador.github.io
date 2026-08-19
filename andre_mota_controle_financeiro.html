@@ -2038,6 +2038,29 @@ function syncIdbGet(key){
 }
 
 // ---- Monta o "pacote" completo com tudo que deve ser sincronizado ----
+// Conta quantos lancamentos/valores existem (serve tanto pro app atual quanto pra um payload recebido do arquivo).
+// Usado como checagem de seguranca: se o arquivo parecer ter MUITO menos coisa que o aparelho atual, avisa antes de sobrescrever.
+function syncContarItens(payload){
+  var d=payload?payload.data:data;
+  var comp=payload?payload.ccCompras:ccCompras;
+  var emp=payload?payload.emprestimos:emprestimos;
+  var total=0;
+  if(comp) total+=comp.length;
+  if(emp) total+=emp.length;
+  if(d){
+    for(var ano in d){
+      for(var mes in d[ano]){
+        var md=d[ano][mes];
+        if(!md) continue;
+        ['receitas','fixos','variaveis','cartao'].forEach(function(cat){
+          if(md[cat]) md[cat].forEach(function(v){if(parseFloat(v)>0) total++;});
+        });
+      }
+    }
+  }
+  return total;
+}
+
 function syncBuildPayload(){
   return {
     tipo:'amcf_sync',
@@ -2127,6 +2150,19 @@ function syncReadFromFile(forcar){
     try{payload=JSON.parse(text);}catch(e){return false;}
     if(!payload||payload.tipo!=='amcf_sync') return false;
     if(forcar||(payload.savedAt||0)>syncLastSavedAt){
+      // Checagem de seguranca: evita que um arquivo desatualizado (ex: Dropbox ainda sincronizando) apague dados mais completos que ja estao aqui
+      if(!forcar){
+        var totalAtual=syncContarItens();
+        var totalArquivo=syncContarItens(payload);
+        if(totalAtual>0&&totalArquivo<totalAtual*0.8){
+          var confirmar=confirm('⚠️ O arquivo de sincronização parece ter MENOS lançamentos ('+totalArquivo+') do que este aparelho tem agora ('+totalAtual+').\n\nIsso costuma acontecer quando o Dropbox ainda não terminou de sincronizar em outro aparelho.\n\nOK = aplicar o arquivo mesmo assim (pode perder dados que só existem aqui)\nCancelar = manter os dados daqui e atualizar o arquivo com eles agora');
+          if(!confirmar){
+            syncWriteToFile();
+            syncSetStatus('🛡️ Mantive os dados deste aparelho (mais completos) e atualizei o arquivo com eles.');
+            return false;
+          }
+        }
+      }
       syncApplyPayload(payload);
       showToast();
       return true;
