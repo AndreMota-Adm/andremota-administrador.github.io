@@ -502,6 +502,11 @@ body{font-family:'DM Sans',sans-serif;background:var(--navy);color:var(--white);
 .sync-btn{width:100%;background:var(--gold);color:var(--navy);border:none;border-radius:10px;padding:.7rem;font-size:.85rem;font-weight:700;font-family:'DM Sans',sans-serif;cursor:pointer;margin-bottom:.5rem;touch-action:manipulation;}
 .sync-btn:active{opacity:.8;}
 .sync-btn-secondary{width:100%;background:transparent;color:rgba(255,255,255,.55);border:1px solid rgba(255,255,255,.2);border-radius:10px;padding:.6rem;font-size:.78rem;font-weight:600;font-family:'DM Sans',sans-serif;cursor:pointer;touch-action:manipulation;}
+.backup-item{display:flex;justify-content:space-between;align-items:center;gap:.6rem;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:10px;padding:.6rem .8rem;margin-bottom:.5rem;}
+.backup-item-info{font-size:.76rem;color:rgba(255,255,255,.8);line-height:1.4;}
+.backup-item-info b{color:var(--gold);}
+.backup-item-motivo{font-size:.68rem;color:rgba(255,255,255,.45);}
+.backup-restore-btn{background:rgba(45,93,191,.15);border:1px solid rgba(45,93,191,.4);color:#7FA8FF;border-radius:8px;padding:.4rem .7rem;font-size:.72rem;font-weight:700;font-family:'DM Sans',sans-serif;cursor:pointer;touch-action:manipulation;white-space:nowrap;}
 
 /* ===== SAUDAÇÃO PERSONALIZADA ===== */
 .dash-greeting h2{font-family:'Cormorant Garamond',serif;font-size:1.6rem;font-weight:700;color:var(--gold-light);}
@@ -997,6 +1002,16 @@ body{font-family:'DM Sans',sans-serif;background:var(--navy);color:var(--white);
             <button class="sync-btn" id="syncOpenBtn" onclick="syncOpenFile()" style="display:none;">📂 Abrir arquivo já existente (outro aparelho)</button>
             <button class="sync-btn" id="syncNowBtn" onclick="syncNow()" style="display:none;">🔄 Sincronizar agora</button>
             <button class="sync-btn-secondary" id="syncUnlinkBtn" onclick="syncDisconnect()" style="display:none;">Desvincular arquivo</button>
+          </div>
+        </div>
+        <!-- Backups locais automáticos -->
+        <div>
+          <div class="perfil-label">Cópias de segurança automáticas</div>
+          <div class="sync-card" id="backupCard">
+            <div class="sync-header">📦 Backups locais</div>
+            <div class="sync-desc">O app guarda sozinho, neste aparelho, cópias dos seus dados nos momentos de risco (antes de sincronizar) e periodicamente. Se algo sumir, você pode voltar pra uma cópia anterior aqui, sem depender do Dropbox.</div>
+            <div class="sync-status" id="backupStatus">Nenhum backup ainda.</div>
+            <div id="backupLista"></div>
           </div>
         </div>
         <!-- Botão salvar -->
@@ -2061,6 +2076,96 @@ function syncContarItens(payload){
   return total;
 }
 
+// ===== BACKUPS LOCAIS AUTOMÁTICOS =====
+// Rede de segurança independente do Dropbox: o app guarda sozinho cópias dos dados nos momentos de risco.
+// Fica tudo neste aparelho (localStorage), então funciona mesmo sem internet e mesmo se o arquivo de sincronização se perder.
+var BACKUP_MAX=10;
+var BACKUP_LISTA_KEY='amcf_backups_lista';
+
+function backupSalvar(motivo){
+  try{
+    var lista=JSON.parse(localStorage.getItem(BACKUP_LISTA_KEY)||'[]');
+    var agora=Date.now();
+    var chave='amcf_backup_'+agora;
+    var snapshot={
+      data:data,emprestimos:emprestimos,customLines:customLines,
+      perfil:perfil,metaReserva:metaReserva,
+      ccCartoes:(typeof ccCartoes!=='undefined')?ccCartoes:[],
+      ccCompras:(typeof ccCompras!=='undefined')?ccCompras:[],
+      ccCatsCustom:(typeof ccCatsCustom!=='undefined')?ccCatsCustom:[]
+    };
+    var itens=syncContarItens(snapshot);
+    localStorage.setItem(chave,JSON.stringify(snapshot));
+    lista.push({chave:chave,quando:agora,motivo:motivo||'automático',itens:itens});
+    while(lista.length>BACKUP_MAX){
+      var removido=lista.shift();
+      try{localStorage.removeItem(removido.chave);}catch(e){}
+    }
+    localStorage.setItem(BACKUP_LISTA_KEY,JSON.stringify(lista));
+  }catch(e){console.error('Erro ao salvar backup local:',e);}
+}
+
+function backupListar(){
+  try{return JSON.parse(localStorage.getItem(BACKUP_LISTA_KEY)||'[]');}catch(e){return [];}
+}
+
+function backupFormatarData(ts){
+  var d=new Date(ts);
+  return d.toLocaleDateString('pt-BR')+' às '+d.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
+}
+
+function backupRenderLista(){
+  var lista=backupListar();
+  var container=document.getElementById('backupLista');
+  var status=document.getElementById('backupStatus');
+  if(!container) return;
+  container.innerHTML='';
+  if(lista.length===0){
+    if(status) status.textContent='Nenhum backup ainda. O primeiro é criado automaticamente no próximo uso do app.';
+    return;
+  }
+  if(status) status.textContent='Últimos '+lista.length+' backups guardados neste aparelho (mais recente primeiro):';
+  var ordenada=lista.slice().reverse();
+  ordenada.forEach(function(b){
+    var div=document.createElement('div');
+    div.className='backup-item';
+    div.innerHTML='<div class="backup-item-info"><b>'+backupFormatarData(b.quando)+'</b><br><span class="backup-item-motivo">'+b.itens+' lançamentos · '+b.motivo+'</span></div>'
+      +'<button class="backup-restore-btn" data-chave="'+b.chave+'">↩️ Restaurar</button>';
+    div.querySelector('.backup-restore-btn').onclick=function(){
+      backupRestaurar(b.chave);
+    };
+    container.appendChild(div);
+  });
+}
+
+function backupRestaurar(chave){
+  var raw=localStorage.getItem(chave);
+  if(!raw){alert('Esse backup não foi encontrado (pode já ter sido substituído por um mais novo).');return;}
+  var snapshot;
+  try{snapshot=JSON.parse(raw);}catch(e){alert('Esse backup está corrompido.');return;}
+  var totalAtual=syncContarItens();
+  var totalBackup=syncContarItens(snapshot);
+  if(!confirm('Restaurar esse backup ('+totalBackup+' lançamentos)?\n\nIsso vai SUBSTITUIR o que está no app agora ('+totalAtual+' lançamentos).\n\nUm backup do estado atual (antes de restaurar) será salvo primeiro, então dá pra desfazer se mudar de ideia.')) return;
+  backupSalvar('antes de restaurar um backup anterior');
+  var payload={tipo:'amcf_sync',savedAt:Date.now()};
+  for(var k in snapshot) payload[k]=snapshot[k];
+  syncApplyPayload(payload);
+  if(syncFileHandle) syncWriteToFile();
+  backupRenderLista();
+  alert('Backup restaurado com sucesso!');
+}
+
+// Cria um backup por rotina se o ultimo tiver mais de 1 dia (protege mesmo quem nao usa sincronizacao)
+function backupRotinaDiaria(){
+  var lista=backupListar();
+  var ultimo=lista.length>0?lista[lista.length-1]:null;
+  var umDiaMs=24*60*60*1000;
+  if(!ultimo||(Date.now()-ultimo.quando)>umDiaMs){
+    backupSalvar('rotina diária');
+  }
+  backupRenderLista();
+}
+
 function syncBuildPayload(){
   return {
     tipo:'amcf_sync',
@@ -2110,6 +2215,7 @@ function syncApplyPayload(payload){
   rodarDiagnostico();
   if(typeof preencherFormPerfil==='function') preencherFormPerfil();
   if(typeof ccRenderDashboard==='function') ccRenderDashboard();
+  if(typeof backupRenderLista==='function') backupRenderLista();
   var activeSecEl=document.querySelector('.section.active');
   if(activeSecEl) ccShowSection(activeSecEl.id.replace('sec-',''));
   return true;
@@ -2163,6 +2269,9 @@ function syncReadFromFile(forcar){
           return false;
         }
       }
+      // Backup automatico local ANTES de aplicar qualquer coisa vinda do arquivo — mesmo se o Dropbox falhar,
+      // essa copia fica guardada aqui no aparelho e pode ser restaurada na aba Perfil.
+      backupSalvar('antes de aplicar sincronização recebida');
       syncApplyPayload(payload);
       showToast();
       return true;
@@ -3489,11 +3598,13 @@ function ccRenderCartoes(){
       div.querySelector('.cc-btn-del').onclick=function(){
         var id=this.getAttribute('data-id');
         if(!confirm('Remover este cartão e todos os lançamentos?')) return;
+        backupSalvar('antes de excluir o cartão '+(c.nome||''));
         ccCartoes=ccCartoes.filter(function(x){return x.id!==id;});
         ccCompras=ccCompras.filter(function(x){return x.cartaoId!==id;});
         if(ccSelectedCartao===id) ccSelectedCartao=ccCartoes.length>0?ccCartoes[0].id:null;
         if(ccEditingCartaoId===id) ccResetCartaoForm();
         ccSave(); ccRenderCartoes(); ccRenderDashboard();
+        backupRenderLista();
       };
       list.appendChild(div);
     });
@@ -4131,6 +4242,8 @@ function startApp(){
   ccInitEvents();
   // Sincronização entre dispositivos (se ja tiver sido vinculada antes)
   syncInit();
+  // Backups locais automáticos: cria um se o último tiver mais de 1 dia, e mostra a lista
+  backupRotinaDiaria();
   // Mostrar tela de seleção de módulo (sessão nova)
   if(!moduloSessaoIniciada){
     mostrarTelaModulo();
@@ -4138,12 +4251,14 @@ function startApp(){
 }
 function limparMes(){
   if(!confirm('Limpar todos os dados de '+MESES[currentMonth]+' de '+currentYear+'?'))return;
+  backupSalvar('antes de limpar '+MESES[currentMonth]+'/'+currentYear);
   var d=ensureMonthData(currentYear,currentMonth);
   for(var i=0;i<d.receitas.length;i++)d.receitas[i]=0;
   for(var i=0;i<d.fixos.length;i++)d.fixos[i]=0;
   for(var i=0;i<d.variaveis.length;i++)d.variaveis[i]=0;
   for(var i=0;i<d.cartao.length;i++)d.cartao[i]=0;
   fillInputs();recalcAll();saveData();
+  backupRenderLista();
 }
 function irParaHotmart(){
   window.open('https://hotmart.com/seu-link-aqui','_blank');
