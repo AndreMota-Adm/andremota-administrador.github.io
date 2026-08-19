@@ -2150,17 +2150,17 @@ function syncReadFromFile(forcar){
     try{payload=JSON.parse(text);}catch(e){return false;}
     if(!payload||payload.tipo!=='amcf_sync') return false;
     if(forcar||(payload.savedAt||0)>syncLastSavedAt){
-      // Checagem de seguranca: evita que um arquivo desatualizado (ex: Dropbox ainda sincronizando) apague dados mais completos que ja estao aqui
-      if(!forcar){
-        var totalAtual=syncContarItens();
-        var totalArquivo=syncContarItens(payload);
-        if(totalAtual>0&&totalArquivo<totalAtual*0.8){
-          var confirmar=confirm('⚠️ O arquivo de sincronização parece ter MENOS lançamentos ('+totalArquivo+') do que este aparelho tem agora ('+totalAtual+').\n\nIsso costuma acontecer quando o Dropbox ainda não terminou de sincronizar em outro aparelho.\n\nOK = aplicar o arquivo mesmo assim (pode perder dados que só existem aqui)\nCancelar = manter os dados daqui e atualizar o arquivo com eles agora');
-          if(!confirmar){
-            syncWriteToFile();
-            syncSetStatus('🛡️ Mantive os dados deste aparelho (mais completos) e atualizei o arquivo com eles.');
-            return false;
-          }
+      // Checagem de seguranca: evita que um arquivo desatualizado (ex: Dropbox ainda sincronizando, ou reconexao pro arquivo errado)
+      // apague dados mais completos que ja estao aqui. Vale SEMPRE, inclusive ao reconectar manualmente com "Abrir arquivo já existente" —
+      // foi exatamente essa brecha (o "forcar" pulando a checagem) que causou uma perda real de dados.
+      var totalAtual=syncContarItens();
+      var totalArquivo=syncContarItens(payload);
+      if(totalAtual>0&&totalArquivo<totalAtual*0.8){
+        var confirmar=confirm('⚠️ O arquivo de sincronização parece ter MENOS lançamentos ('+totalArquivo+') do que este aparelho tem agora ('+totalAtual+').\n\nIsso costuma acontecer quando o Dropbox ainda não terminou de sincronizar em outro aparelho, ou quando o arquivo escolhido não é o mais atual.\n\nOK = aplicar o arquivo mesmo assim (pode perder dados que só existem aqui)\nCancelar = manter os dados daqui e atualizar o arquivo com eles agora');
+        if(!confirmar){
+          syncWriteToFile();
+          syncSetStatus('🛡️ Mantive os dados deste aparelho (mais completos) e atualizei o arquivo com eles.');
+          return false;
         }
       }
       syncApplyPayload(payload);
