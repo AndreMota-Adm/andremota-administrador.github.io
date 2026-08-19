@@ -308,6 +308,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--navy);color:var(--white);
 .cc-lanc-info2{font-size:.7rem;color:rgba(255,255,255,.4);margin-top:.1rem;}
 .cc-lanc-badge{font-size:.65rem;background:rgba(201,162,39,.15);color:var(--gold);padding:.15rem .45rem;border-radius:10px;margin-top:.2rem;display:inline-block;}
 .cc-lanc-ajustar-btn{display:block;margin-top:.3rem;background:rgba(45,93,191,.12);border:1px solid rgba(45,93,191,.3);color:#7FA8FF;border-radius:6px;font-size:.62rem;font-weight:600;font-family:'DM Sans',sans-serif;padding:.18rem .45rem;cursor:pointer;touch-action:manipulation;}
+.cc-lanc-cancelar-btn{display:block;margin-top:.3rem;background:rgba(239,83,80,.1);border:1px solid rgba(239,83,80,.25);color:#EF5350;border-radius:6px;font-size:.62rem;font-weight:600;font-family:'DM Sans',sans-serif;padding:.18rem .45rem;cursor:pointer;touch-action:manipulation;}
 .cc-toggle-fixo{display:flex;align-items:center;gap:.6rem;padding:.65rem .8rem;background:rgba(45,93,191,.08);border:1px solid rgba(45,93,191,.25);border-radius:10px;margin-bottom:.2rem;cursor:pointer;touch-action:manipulation;}
 .cc-toggle-fixo input{display:none;}
 .cc-toggle-switch{width:38px;height:20px;background:rgba(255,255,255,.15);border-radius:20px;position:relative;flex-shrink:0;transition:background .2s;}
@@ -3006,6 +3007,9 @@ function ccEstaAtivaNoMes(compra,mes,ano){
   // Parcelado: so ativo enquanto ainda houver parcela dentro do range 1..parcelas
   var offset=mesAbsAlvo-mesAbsInicio;
   var numParcela=compra.parcelaAtual+offset;
+  // Se foi cancelada antes de terminar (ex: assinatura de academia cancelada na 3a de 10x),
+  // as parcelas a partir da parcelaCancelamento (inclusive) nao contam mais
+  if(compra.parcelaCancelamento!=null&&numParcela>=compra.parcelaCancelamento) return false;
   return numParcela>=1&&numParcela<=compra.parcelas;
 }
 
@@ -3191,16 +3195,18 @@ function ccRenderLancList(){
       }
       totalInfo='';
     } else if(c.parcelas>1){
-      badgeHtml='<div class="cc-lanc-badge">'+numParcelaAtual+'ª/'+c.parcelas+'x'+(foiAjustada?' · ajustada':'')+'</div>';
+      var infoCancelada=(c.parcelaCancelamento!=null)?(' · cancelada a partir da '+c.parcelaCancelamento+'ª'):'';
+      badgeHtml='<div class="cc-lanc-badge">'+numParcelaAtual+'ª/'+c.parcelas+'x'+(foiAjustada?' · ajustada':'')+infoCancelada+'</div>';
       totalInfo='<div class="cc-lanc-info2">Total: '+ccFmt(c.valorTotal)+'</div>';
     } else {
       badgeHtml='<div class="cc-lanc-badge">À vista</div>';
       totalInfo='';
     }
     var btnAjustarHtml=(c.parcelas>1||c.recorrente)?'<button class="cc-lanc-ajustar-btn" data-id="'+c.id+'" title="Ajustar valor deste mês">💲 Ajustar</button>':'';
+    var btnCancelarHtml=(c.parcelas>1&&!c.recorrente&&numParcelaAtual<c.parcelas)?'<button class="cc-lanc-cancelar-btn" data-id="'+c.id+'" title="Cancelar parcelas restantes, mantendo o histórico">🚫 Cancelar restantes</button>':'';
     div.innerHTML='<div class="cc-lanc-icon">'+ccGetCatIcon(c.cat)+'</div>'
       +'<div class="cc-lanc-info"><div class="cc-lanc-desc">'+c.desc+'</div><div class="cc-lanc-cat">'+c.cat+'</div></div>'
-      +'<div class="cc-lanc-right"><div class="cc-lanc-val'+(valParcela<0?' cc-lanc-val-credito':'')+'">'+ccFmt(valParcela)+'</div>'+totalInfo+badgeHtml+btnAjustarHtml+'</div>'
+      +'<div class="cc-lanc-right"><div class="cc-lanc-val'+(valParcela<0?' cc-lanc-val-credito':'')+'">'+ccFmt(valParcela)+'</div>'+totalInfo+badgeHtml+btnAjustarHtml+btnCancelarHtml+'</div>'
       +'<div class="cc-lanc-actions">'
       +'<button class="cc-lanc-edit" data-id="'+c.id+'" title="Editar lançamento">✏️</button>'
       +'<button class="cc-lanc-dup" data-id="'+c.id+'" title="Duplicar no mês atual">📋</button>'
@@ -3210,6 +3216,12 @@ function ccRenderLancList(){
     if(btnAjustarEl){
       btnAjustarEl.onclick=function(){
         ccAjustarParcela(c.id,currentMonth,ccCurrentYear);
+      };
+    }
+    var btnCancelarEl=div.querySelector('.cc-lanc-cancelar-btn');
+    if(btnCancelarEl){
+      btnCancelarEl.onclick=function(){
+        ccCancelarRestante(c.id,currentMonth,ccCurrentYear);
       };
     }
     div.querySelector('.cc-lanc-edit').onclick=function(){
@@ -3222,7 +3234,9 @@ function ccRenderLancList(){
     };
     div.querySelector('.cc-lanc-del').onclick=function(){
       var id=this.getAttribute('data-id');
-      if(!confirm('Remover esta compra?')) return;
+      var alvo=ccCompras.find(function(x){return x.id===id;});
+      var avisoParcelado=(alvo&&alvo.parcelas>1&&!alvo.recorrente)?'\n\n⚠️ Isso remove TODAS as parcelas (passadas e futuras), não só o mês atual. Pra cancelar só as parcelas futuras mantendo o histórico, use "🚫 Cancelar restantes" em vez de excluir.':'';
+      if(!confirm('Remover esta compra?'+avisoParcelado)) return;
       ccCompras=ccCompras.filter(function(x){return x.id!==id;});
       ccSave(); ccRenderLancList(); ccRenderDashboard();
     };
@@ -3368,6 +3382,25 @@ function ccAjustarParcela(id,mes,ano){
   ccRenderLancList();
   ccRenderDashboard();
   recalcAll();
+}
+
+// Cancela uma compra parcelada a partir de uma parcela especifica (ex: cancelou uma assinatura de academia parcelada em 10x na 3a parcela).
+// As parcelas ANTERIORES continuam intactas no historico. A partir da parcela informada (inclusive), a compra deixa de aparecer/cobrar.
+function ccCancelarRestante(id,mes,ano){
+  var compra=ccCompras.find(function(x){return x.id===id;});
+  if(!compra) return;
+  if(compra.recorrente){alert('Esse é um lançamento fixo recorrente, não parcelado. Use o botão "💲 Ajustar" pra encerrá-lo (digite 0 e escolha "aplicar dali em diante").');return;}
+  var numParcela=ccGetNumParcela(compra,mes,ano);
+  if(!numParcela){alert('Esta compra não tem parcela ativa neste mês.');return;}
+  if(numParcela>=compra.parcelas){alert('Essa já é a última parcela — não existem parcelas futuras pra cancelar.');return;}
+  if(!confirm('Cancelar "'+compra.desc+'" a partir da '+numParcela+'ª parcela ('+MESES[mes]+'/'+ano+')?\n\n✅ As parcelas 1ª até '+(numParcela-1)+'ª continuam exatamente como estão no histórico.\n🚫 A partir da '+numParcela+'ª parcela (inclusive esta), nada mais será cobrado — as parcelas '+(numParcela+1)+'ª até '+compra.parcelas+'ª desaparecem.')) return;
+  backupSalvar('antes de cancelar parcelas restantes de '+compra.desc);
+  compra.parcelaCancelamento=numParcela;
+  ccSave();
+  ccRenderLancList();
+  ccRenderDashboard();
+  backupRenderLista();
+  alert('Cancelado! A partir da '+numParcela+'ª parcela, "'+compra.desc+'" não aparece mais.');
 }
 
 // Preenche o formulário com a descrição/categoria/valor de um lançamento existente,
