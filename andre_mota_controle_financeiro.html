@@ -3229,7 +3229,7 @@ function ccRenderLancList(){
       totalInfo='';
     }
     var btnAjustarHtml=(c.parcelas>1||c.recorrente)?'<button class="cc-lanc-ajustar-btn" data-id="'+c.id+'" title="Ajustar valor deste mês">💲 Ajustar</button>':'';
-    var btnCancelarHtml=(c.parcelas>1&&!c.recorrente&&numParcelaAtual<c.parcelas)?'<button class="cc-lanc-cancelar-btn" data-id="'+c.id+'" title="Cancelar parcelas restantes, mantendo o histórico">🚫 Cancelar restantes</button>':'';
+    var btnCancelarHtml=(c.recorrente||(c.parcelas>1&&numParcelaAtual<c.parcelas))?'<button class="cc-lanc-cancelar-btn" data-id="'+c.id+'" title="Cancelar a partir deste mês, mantendo o histórico">🚫 Cancelar restantes</button>':'';
     div.innerHTML='<div class="cc-lanc-icon">'+ccGetCatIcon(c.cat)+'</div>'
       +'<div class="cc-lanc-info"><div class="cc-lanc-desc">'+c.desc+'</div><div class="cc-lanc-cat">'+c.cat+'</div></div>'
       +'<div class="cc-lanc-right"><div class="cc-lanc-val'+(valParcela<0?' cc-lanc-val-credito':'')+'">'+ccFmt(valParcela)+'</div>'+totalInfo+badgeHtml+btnAjustarHtml+btnCancelarHtml+'</div>'
@@ -3261,7 +3261,12 @@ function ccRenderLancList(){
     div.querySelector('.cc-lanc-del').onclick=function(){
       var id=this.getAttribute('data-id');
       var alvo=ccCompras.find(function(x){return x.id===id;});
-      var avisoParcelado=(alvo&&alvo.parcelas>1&&!alvo.recorrente)?'\n\n⚠️ Isso remove TODAS as parcelas (passadas e futuras), não só o mês atual. Pra cancelar só as parcelas futuras mantendo o histórico, use "🚫 Cancelar restantes" em vez de excluir.':'';
+      var avisoParcelado='';
+      if(alvo&&alvo.recorrente){
+        avisoParcelado='\n\n⚠️ Isso remove TODOS os meses (passados e futuros), não só o mês atual. Pra cancelar só a partir deste mês mantendo o histórico anterior, use "🚫 Cancelar restantes" em vez de excluir.';
+      } else if(alvo&&alvo.parcelas>1){
+        avisoParcelado='\n\n⚠️ Isso remove TODAS as parcelas (passadas e futuras), não só o mês atual. Pra cancelar só as parcelas futuras mantendo o histórico, use "🚫 Cancelar restantes" em vez de excluir.';
+      }
       if(!confirm('Remover esta compra?'+avisoParcelado)) return;
       backupSalvar('antes de excluir o lançamento "'+(alvo?alvo.desc:'')+'"');
       ccCompras=ccCompras.filter(function(x){return x.id!==id;});
@@ -3417,7 +3422,28 @@ function ccAjustarParcela(id,mes,ano){
 function ccCancelarRestante(id,mes,ano){
   var compra=ccCompras.find(function(x){return x.id===id;});
   if(!compra) return;
-  if(compra.recorrente){alert('Esse é um lançamento fixo recorrente, não parcelado. Use o botão "💲 Ajustar" pra encerrá-lo (digite 0 e escolha "aplicar dali em diante").');return;}
+  if(compra.recorrente){
+    if(!ccEstaAtivaNoMes(compra,mes,ano)){alert('Este lançamento não está ativo neste mês.');return;}
+    if(!confirm('Cancelar "'+compra.desc+'" a partir de '+MESES[mes]+'/'+ano+' (inclusive)?\n\n✅ Os meses anteriores continuam exatamente como estão no histórico.\n🚫 A partir deste mês, ele para de aparecer/cobrar — pra sempre, até você lançar de novo se precisar.')) return;
+    backupSalvar('antes de cancelar '+compra.desc+' a partir de '+MESES[mes]+'/'+ano);
+    var mesAbsInicio=compra.anoInicio*12+compra.mesInicio;
+    var mesAbsAlvo=ano*12+mes;
+    if(mesAbsInicio>=mesAbsAlvo){
+      // Comecou neste mesmo mes (nao ha historico anterior pra preservar) — remove direto
+      ccCompras=ccCompras.filter(function(x){return x.id!==compra.id;});
+    } else {
+      var mesAnt=mes-1,anoAnt=ano;
+      if(mesAnt<0){mesAnt=11;anoAnt--;}
+      compra.mesFim=mesAnt;
+      compra.anoFim=anoAnt;
+    }
+    ccSave();
+    ccRenderLancList();
+    ccRenderDashboard();
+    backupRenderLista();
+    alert('Cancelado! A partir de '+MESES[mes]+'/'+ano+', "'+compra.desc+'" não aparece mais.');
+    return;
+  }
   var numParcela=ccGetNumParcela(compra,mes,ano);
   if(!numParcela){alert('Esta compra não tem parcela ativa neste mês.');return;}
   if(numParcela>=compra.parcelas){alert('Essa já é a última parcela — não existem parcelas futuras pra cancelar.');return;}
