@@ -509,6 +509,8 @@ body{font-family:'DM Sans',sans-serif;background:var(--navy);color:var(--white);
 .backup-item-info b{color:var(--gold);}
 .backup-item-motivo{font-size:.68rem;color:rgba(255,255,255,.45);}
 .backup-restore-btn{background:rgba(45,93,191,.15);border:1px solid rgba(45,93,191,.4);color:#7FA8FF;border-radius:8px;padding:.4rem .7rem;font-size:.72rem;font-weight:700;font-family:'DM Sans',sans-serif;cursor:pointer;touch-action:manipulation;white-space:nowrap;}
+.backup-item-btns{display:flex;gap:.4rem;flex-shrink:0;}
+.backup-del-btn{background:rgba(239,83,80,.1);border:1px solid rgba(239,83,80,.25);color:#EF5350;border-radius:8px;padding:.4rem .55rem;font-size:.72rem;cursor:pointer;touch-action:manipulation;}
 
 /* ===== SAUDAÇÃO PERSONALIZADA ===== */
 .dash-greeting h2{font-family:'Cormorant Garamond',serif;font-size:1.6rem;font-weight:700;color:var(--gold-light);}
@@ -2106,7 +2108,7 @@ function syncContarItens(payload){
 // ===== BACKUPS LOCAIS AUTOMÁTICOS =====
 // Rede de segurança independente do Dropbox: o app guarda sozinho cópias dos dados nos momentos de risco.
 // Fica tudo neste aparelho (localStorage), então funciona mesmo sem internet e mesmo se o arquivo de sincronização se perder.
-var BACKUP_MAX=10;
+var BACKUP_MAX=3;
 var BACKUP_LISTA_KEY='amcf_backups_lista';
 
 function backupSalvar(motivo){
@@ -2157,12 +2159,30 @@ function backupRenderLista(){
     var div=document.createElement('div');
     div.className='backup-item';
     div.innerHTML='<div class="backup-item-info"><b>'+backupFormatarData(b.quando)+'</b><br><span class="backup-item-motivo">'+b.itens+' lançamentos · '+b.motivo+'</span></div>'
-      +'<button class="backup-restore-btn" data-chave="'+b.chave+'">↩️ Restaurar</button>';
+      +'<div class="backup-item-btns">'
+      +'<button class="backup-restore-btn" data-chave="'+b.chave+'">↩️ Restaurar</button>'
+      +'<button class="backup-del-btn" data-chave="'+b.chave+'" title="Excluir este backup">🗑️</button>'
+      +'</div>';
     div.querySelector('.backup-restore-btn').onclick=function(){
       backupRestaurar(b.chave);
     };
+    div.querySelector('.backup-del-btn').onclick=function(){
+      backupExcluir(b.chave);
+    };
     container.appendChild(div);
   });
+}
+
+// Exclui manualmente um backup especifico da lista (nao mexe nos dados atuais do app, so remove essa copia salva)
+function backupExcluir(chave){
+  if(!confirm('Excluir este backup? Essa cópia específica não poderá mais ser restaurada depois.')) return;
+  try{
+    var lista=backupListar();
+    lista=lista.filter(function(b){return b.chave!==chave;});
+    localStorage.setItem(BACKUP_LISTA_KEY,JSON.stringify(lista));
+    localStorage.removeItem(chave);
+  }catch(e){console.error('Erro ao excluir backup:',e);}
+  backupRenderLista();
 }
 
 function backupRestaurar(chave){
