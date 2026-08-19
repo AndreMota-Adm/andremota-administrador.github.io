@@ -1261,6 +1261,31 @@ body{font-family:'DM Sans',sans-serif;background:var(--navy);color:var(--white);
       <div class="cc-sec-title">Meus cartões</div>
       <div id="ccCartoesList"></div>
       <div class="cc-divider"></div>
+      <div class="cc-sec-title">Mover lançamentos entre cartões</div>
+      <div class="cc-cat-manager">
+        <div class="sync-desc" style="margin-bottom:.7rem;">Lançou sem querer no cartão errado? Escolha de qual cartão pra qual cartão mover, e se é só os lançamentos deste mês ou todos.</div>
+        <div class="cc-form-row">
+          <div class="cc-form-group">
+            <label class="cc-form-lbl">De (cartão errado)</label>
+            <select class="cc-fselect" id="ccMoverOrigem"></select>
+          </div>
+          <div class="cc-form-group">
+            <label class="cc-form-lbl">Para (cartão certo)</label>
+            <select class="cc-fselect" id="ccMoverDestino"></select>
+          </div>
+        </div>
+        <div class="cc-form-row full">
+          <div class="cc-form-group">
+            <label class="cc-form-lbl">O quê mover</label>
+            <select class="cc-fselect" id="ccMoverEscopo">
+              <option value="mes">Só os lançamentos deste mês</option>
+              <option value="todos">Todos os lançamentos (qualquer mês)</option>
+            </select>
+          </div>
+        </div>
+        <button class="cc-btn-add" onclick="ccMoverLancamentos()">🔀 Mover lançamentos</button>
+      </div>
+      <div class="cc-divider"></div>
       <div class="cc-sec-title">Categorias personalizadas</div>
       <div class="cc-cat-manager">
         <div class="cc-form-title">➕ Nova categoria</div>
@@ -3610,6 +3635,55 @@ function ccRenderCartoes(){
     });
   }
   ccRenderCatChips();
+  ccPopularSeletoresMover();
+}
+
+// Preenche os seletores "De" / "Para" da ferramenta de mover lançamentos entre cartões
+function ccPopularSeletoresMover(){
+  var selOrigem=document.getElementById('ccMoverOrigem');
+  var selDestino=document.getElementById('ccMoverDestino');
+  if(!selOrigem||!selDestino) return;
+  var valOrigemAnterior=selOrigem.value,valDestinoAnterior=selDestino.value;
+  selOrigem.innerHTML='';
+  selDestino.innerHTML='';
+  ccCartoes.forEach(function(c){
+    var opt1=document.createElement('option');
+    opt1.value=c.id; opt1.textContent=c.nome;
+    selOrigem.appendChild(opt1);
+    var opt2=document.createElement('option');
+    opt2.value=c.id; opt2.textContent=c.nome;
+    selDestino.appendChild(opt2);
+  });
+  if(valOrigemAnterior&&ccCartoes.some(function(c){return c.id===valOrigemAnterior;})) selOrigem.value=valOrigemAnterior;
+  if(valDestinoAnterior&&ccCartoes.some(function(c){return c.id===valDestinoAnterior;})) selDestino.value=valDestinoAnterior;
+}
+
+// Move (em lote) os lançamentos de um cartão pra outro — util quando lança sem querer no cartão errado
+function ccMoverLancamentos(){
+  var origemId=document.getElementById('ccMoverOrigem').value;
+  var destinoId=document.getElementById('ccMoverDestino').value;
+  var escopo=document.getElementById('ccMoverEscopo').value;
+  if(!origemId||!destinoId){alert('Escolha os dois cartões.');return;}
+  if(origemId===destinoId){alert('Escolha dois cartões diferentes.');return;}
+  var cartaoOrigem=ccCartoes.find(function(c){return c.id===origemId;});
+  var cartaoDestino=ccCartoes.find(function(c){return c.id===destinoId;});
+  if(!cartaoOrigem||!cartaoDestino) return;
+  var candidatos=ccCompras.filter(function(c){
+    if(c.cartaoId!==origemId) return false;
+    if(escopo==='mes') return ccEstaAtivaNoMes(c,currentMonth,ccCurrentYear);
+    return true;
+  });
+  if(candidatos.length===0){alert('Nenhum lançamento encontrado pra mover com esse filtro.');return;}
+  var descEscopo=escopo==='mes'?('de '+MESES[currentMonth]+'/'+ccCurrentYear):'de todos os meses';
+  if(!confirm('Mover '+candidatos.length+' lançamento(s) '+descEscopo+' de "'+cartaoOrigem.nome+'" pra "'+cartaoDestino.nome+'"?')) return;
+  backupSalvar('antes de mover lançamentos de '+cartaoOrigem.nome+' pra '+cartaoDestino.nome);
+  candidatos.forEach(function(c){c.cartaoId=destinoId;});
+  ccSave();
+  ccRenderLancList();
+  ccRenderDashboard();
+  ccRenderCartoes();
+  backupRenderLista();
+  alert(candidatos.length+' lançamento(s) movido(s) com sucesso pra "'+cartaoDestino.nome+'"!');
 }
 
 function ccAddCartao(){
