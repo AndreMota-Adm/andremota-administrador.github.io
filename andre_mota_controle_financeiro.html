@@ -1016,6 +1016,18 @@ body{font-family:'DM Sans',sans-serif;background:var(--navy);color:var(--white);
             <button class="sync-btn-secondary" id="syncUnlinkBtn" onclick="syncDisconnect()" style="display:none;">Desvincular arquivo</button>
           </div>
         </div>
+        <!-- Importar/Exportar manual (funciona em qualquer aparelho, inclusive celular) -->
+        <div>
+          <div class="perfil-label">Transferir manualmente (funciona no celular também)</div>
+          <div class="sync-card" id="manualCard">
+            <div class="sync-header">📤 Exportar / Importar arquivo</div>
+            <div class="sync-desc">Diferente da sincronização acima, isso funciona em qualquer navegador, inclusive celular. Use pra levar seus dados de um aparelho pro outro na mão — por exemplo, pegue o arquivo já salvo no Dropbox (o mesmo <code>amcf-sincronizacao.json</code>) e importe aqui no celular.</div>
+            <div class="sync-status" id="manualStatus">Escolha exportar (baixar um arquivo com os dados daqui) ou importar (carregar um arquivo de outro aparelho).</div>
+            <button class="sync-btn" onclick="exportarDadosArquivo()">📤 Exportar dados (baixar arquivo)</button>
+            <button class="sync-btn" onclick="document.getElementById('importarArquivoInput').click()">📥 Importar dados (escolher arquivo)</button>
+            <input type="file" id="importarArquivoInput" accept="application/json,.json" style="display:none;" onchange="importarDadosArquivo(event)">
+          </div>
+        </div>
         <!-- Backups locais automáticos -->
         <div>
           <div class="perfil-label">Cópias de segurança automáticas</div>
@@ -2253,6 +2265,52 @@ function syncBuildPayload(){
     ccCompras:(typeof ccCompras!=='undefined')?ccCompras:[],
     ccCatsCustom:(typeof ccCatsCustom!=='undefined')?ccCatsCustom:[]
   };
+}
+
+// ===== EXPORTAR / IMPORTAR MANUAL (funciona em QUALQUER navegador, inclusive celular) =====
+// Diferente da sincronizacao via Dropbox (que usa File System Access, so desktop),
+// isso usa download/upload de arquivo comum — funciona em Android, iPhone, qualquer navegador.
+// O arquivo gerado é EXATAMENTE o mesmo formato do arquivo de sincronização, entao um serve pro outro.
+function exportarDadosArquivo(){
+  var payload=syncBuildPayload();
+  var blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'});
+  var url=URL.createObjectURL(blob);
+  var a=document.createElement('a');
+  a.href=url;
+  a.download='amcf-export-'+new Date().toISOString().slice(0,10)+'.json';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(function(){URL.revokeObjectURL(url);},1000);
+  var status=document.getElementById('manualStatus');
+  if(status) status.textContent='✅ Arquivo exportado! Confira sua pasta de downloads.';
+}
+
+function importarDadosArquivo(event){
+  var file=event.target.files&&event.target.files[0];
+  if(!file) return;
+  var reader=new FileReader();
+  reader.onload=function(e){
+    var payload;
+    try{payload=JSON.parse(e.target.result);}catch(err){alert('Esse arquivo não é um JSON válido.');event.target.value='';return;}
+    if(!payload||payload.tipo!=='amcf_sync'){alert('Esse não parece ser um arquivo de dados do app (nem de exportação, nem de sincronização).');event.target.value='';return;}
+    var totalAtual=syncContarItens();
+    var totalArquivo=syncContarItens(payload);
+    var msg='Importar este arquivo ('+totalArquivo+' lançamentos)?\n\nIsso vai SUBSTITUIR o que está neste aparelho agora ('+totalAtual+' lançamentos).';
+    if(totalAtual>0&&totalArquivo<totalAtual*0.8){
+      msg='⚠️ Esse arquivo parece ter MENOS lançamentos ('+totalArquivo+') do que este aparelho tem agora ('+totalAtual+').\n\n'+msg;
+    }
+    if(!confirm(msg)){event.target.value='';return;}
+    backupSalvar('antes de importar arquivo manual');
+    syncApplyPayload(payload);
+    backupRenderLista();
+    var status=document.getElementById('manualStatus');
+    if(status) status.textContent='✅ Importado! '+totalArquivo+' lançamentos carregados neste aparelho.';
+    alert('Dados importados com sucesso!');
+    event.target.value='';
+  };
+  reader.onerror=function(){alert('Não foi possível ler esse arquivo.');event.target.value='';};
+  reader.readAsText(file);
 }
 
 // ---- Aplica um pacote recebido do arquivo pro app inteiro (dados + tela) ----
