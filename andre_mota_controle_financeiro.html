@@ -353,6 +353,13 @@ body{font-family:'DM Sans',sans-serif;background:var(--navy);color:var(--white);
 .cc-cat-cnt{font-size:.7rem;color:rgba(255,255,255,.4);margin-left:.4rem;}
 .cc-cat-detail{display:none;background:rgba(0,0,0,.15);border-radius:8px;padding:.5rem;margin-top:.3rem;}
 .cc-cat-detail.open{display:block;}
+.cc-anual-destaque{background:rgba(201,162,39,.1);border:1px solid rgba(201,162,39,.28);border-radius:14px;padding:14px;margin-bottom:12px;}
+.cc-anual-destaque-label{font-size:.68rem;color:rgba(255,255,255,.5);text-transform:uppercase;letter-spacing:.1em;margin-bottom:.3rem;}
+.cc-anual-destaque-nome{font-size:1rem;font-weight:700;color:var(--gold);}
+.cc-anual-destaque-val{font-size:.85rem;color:rgba(255,255,255,.8);margin-top:.15rem;}
+.cc-anual-bar-track{background:rgba(255,255,255,.07);border-radius:20px;height:7px;margin-top:.35rem;overflow:hidden;}
+.cc-anual-bar-fill{background:linear-gradient(90deg,var(--gold),#7FA8FF);height:100%;border-radius:20px;transition:width .4s;}
+.cc-anual-mes-mini{display:flex;justify-content:space-between;font-size:.72rem;color:rgba(255,255,255,.6);padding:.25rem 0;border-bottom:1px solid rgba(255,255,255,.04);}
 .cc-cat-detail-item{display:flex;justify-content:space-between;padding:.3rem .2rem;border-bottom:1px solid rgba(255,255,255,.04);}
 .cc-cat-detail-desc{font-size:.78rem;color:rgba(255,255,255,.65);}
 .cc-cat-detail-val{font-size:.78rem;font-weight:700;color:var(--white);}
@@ -705,6 +712,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--navy);color:var(--white);
       <button class="nav-tab" data-sec="cc-lancamentos">➕ Lançar</button>
       <button class="nav-tab" data-sec="cc-resumo">📋 Resumo</button>
       <button class="nav-tab" data-sec="cc-relatorio">📅 Histórico</button>
+      <button class="nav-tab" data-sec="cc-anual">📈 Anual</button>
       <button class="nav-tab" data-sec="cc-cartoes">💳 Cartões</button>
     </div>
   </div>
@@ -1225,6 +1233,21 @@ body{font-family:'DM Sans',sans-serif;background:var(--navy);color:var(--white);
         </div>
       </div>
       <div id="ccRelContent"></div>
+    </div>
+
+    <!-- CC: ANUAL POR CATEGORIA -->
+    <div class="section" id="sec-cc-anual">
+      <div class="cc-modulo-header">
+        <div class="cc-modulo-icon">📈</div>
+        <div>
+          <div class="cc-modulo-title">Consolidado Anual</div>
+          <div class="cc-modulo-sub">Gastos por categoria no ano inteiro</div>
+        </div>
+      </div>
+      <div class="cc-form-row full" style="margin-bottom:.8rem;">
+        <select class="cc-fselect" id="ccAnualAnoSelect" onchange="ccRenderAnualCategoria()"></select>
+      </div>
+      <div id="ccAnualContent"></div>
     </div>
 
     <!-- CC: CARTÕES -->
@@ -1750,6 +1773,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--navy);color:var(--white);
       <button class="bnav-btn" data-sec="cc-lancamentos"><span class="bnav-icon">➕</span><span class="bnav-label">Lançar</span></button>
       <button class="bnav-btn" data-sec="cc-resumo"><span class="bnav-icon">📋</span><span class="bnav-label">Resumo</span></button>
       <button class="bnav-btn" data-sec="cc-relatorio"><span class="bnav-icon">📅</span><span class="bnav-label">Histórico</span></button>
+      <button class="bnav-btn" data-sec="cc-anual"><span class="bnav-icon">📈</span><span class="bnav-label">Anual</span></button>
       <button class="bnav-btn" data-sec="cc-cartoes"><span class="bnav-icon">💳</span><span class="bnav-label">Cartões</span></button>
     </div>
   </div>
@@ -3643,11 +3667,8 @@ function ccRenderResumo(){
   content.appendChild(tot);
 }
 
-function ccRenderRelatorio(){
-  var content=document.getElementById('ccRelContent');
-  if(!content) return;
-  content.innerHTML='';
-  var temDados=false;
+// Calcula quais anos tem algum dado lançado (usado tanto no Histórico quanto no Anual)
+function ccGetAnosComDados(){
   var anosComDados={};
   ccCompras.forEach(function(c){
     anosComDados[c.anoInicio]=true;
@@ -3661,7 +3682,15 @@ function ccRenderRelatorio(){
     anosComDados[anoFinal]=true;
   });
   anosComDados[ccCurrentYear]=true;
-  var anos=Object.keys(anosComDados).map(Number).sort(function(a,b){return b-a;});
+  return Object.keys(anosComDados).map(Number).sort(function(a,b){return b-a;});
+}
+
+function ccRenderRelatorio(){
+  var content=document.getElementById('ccRelContent');
+  if(!content) return;
+  content.innerHTML='';
+  var temDados=false;
+  var anos=ccGetAnosComDados();
   anos.forEach(function(ano){
     var anoHdr=document.createElement('div');
     anoHdr.style.cssText='font-size:11px;font-weight:700;color:var(--gold);text-transform:uppercase;letter-spacing:.12em;margin:14px 0 8px;';
@@ -3690,6 +3719,90 @@ function ccRenderRelatorio(){
     }
   });
   if(!temDados) content.innerHTML='<div class="cc-empty"><div>📅</div><p>Nenhum dado ainda.</p></div>';
+}
+
+// Preenche o seletor de ano da aba Anual
+function ccPopularSeletorAnoAnual(){
+  var sel=document.getElementById('ccAnualAnoSelect');
+  if(!sel) return;
+  var valorAnterior=sel.value;
+  var anos=ccGetAnosComDados();
+  sel.innerHTML='';
+  anos.forEach(function(ano){
+    var opt=document.createElement('option');
+    opt.value=ano; opt.textContent=ano;
+    sel.appendChild(opt);
+  });
+  if(valorAnterior&&anos.indexOf(parseInt(valorAnterior))>=0) sel.value=valorAnterior;
+  else sel.value=ccCurrentYear;
+}
+
+// Consolidado do ano inteiro por categoria — soma os 12 meses e mostra do maior pro menor gasto
+function ccRenderAnualCategoria(){
+  ccPopularSeletorAnoAnual();
+  var sel=document.getElementById('ccAnualAnoSelect');
+  var content=document.getElementById('ccAnualContent');
+  if(!sel||!content) return;
+  var ano=parseInt(sel.value)||ccCurrentYear;
+  content.innerHTML='';
+  // catMap[categoria] = {val: total no ano, count: qtd lançamentos, porMes: [12 valores]}
+  var catMap={};
+  var totalAno=0;
+  for(var m=0;m<12;m++){
+    var items=ccGetComprasMes(m,ano,null);
+    items.forEach(function(c){
+      var v=ccGetValorParaMes(c,m,ano);
+      if(!catMap[c.cat]) catMap[c.cat]={val:0,count:0,porMes:[0,0,0,0,0,0,0,0,0,0,0,0]};
+      catMap[c.cat].val+=v;
+      catMap[c.cat].count++;
+      catMap[c.cat].porMes[m]+=v;
+      totalAno+=v;
+    });
+  }
+  var categorias=Object.keys(catMap).sort(function(a,b){return catMap[b].val-catMap[a].val;});
+  if(categorias.length===0){
+    content.innerHTML='<div class="cc-empty"><div>📈</div><p>Nenhum lançamento em '+ano+' ainda.</p></div>';
+    return;
+  }
+  // Destaque da maior categoria do ano
+  var maior=categorias[0];
+  var pctMaior=totalAno>0?(catMap[maior].val/totalAno*100):0;
+  var destaque=document.createElement('div');
+  destaque.className='cc-anual-destaque';
+  destaque.innerHTML='<div class="cc-anual-destaque-label">Maior categoria em '+ano+'</div>'
+    +'<div class="cc-anual-destaque-nome">'+ccGetCatIcon(maior)+' '+maior+'</div>'
+    +'<div class="cc-anual-destaque-val">'+ccFmt(catMap[maior].val)+' · '+pctMaior.toFixed(0)+'% de tudo que foi gasto no ano</div>';
+  content.appendChild(destaque);
+  // Lista de categorias com barra proporcional
+  var bloco=document.createElement('div');
+  bloco.className='cc-resumo-block';
+  categorias.forEach(function(cat){
+    var d=catMap[cat];
+    var pct=totalAno>0?(d.val/totalAno*100):0;
+    var row=document.createElement('div');
+    row.className='cc-cat-row';
+    row.style.flexDirection='column';
+    row.style.alignItems='stretch';
+    row.innerHTML='<div style="display:flex;justify-content:space-between;align-items:center;">'
+      +'<div class="cc-cat-l"><span>'+ccGetCatIcon(cat)+'</span><span>'+cat+'</span></div>'
+      +'<div><span class="cc-cat-r">'+ccFmt(d.val)+'</span><span class="cc-cat-cnt">'+d.count+'x · '+pct.toFixed(0)+'%</span></div>'
+      +'</div>'
+      +'<div class="cc-anual-bar-track"><div class="cc-anual-bar-fill" style="width:'+pct+'%"></div></div>';
+    var detail=document.createElement('div');
+    detail.className='cc-cat-detail';
+    var mesesComValor=d.porMes.map(function(v,i){return {mes:i,v:v};}).filter(function(x){return x.v>0;});
+    detail.innerHTML='<div style="font-size:10px;color:rgba(255,255,255,.3);margin-bottom:4px;text-transform:uppercase;letter-spacing:.1em">Mês a mês</div>'
+      +mesesComValor.map(function(x){return '<div class="cc-anual-mes-mini"><span>'+MESES[x.mes]+'</span><span>'+ccFmt(x.v)+'</span></div>';}).join('');
+    row.onclick=function(){detail.classList.toggle('open');};
+    bloco.appendChild(row);
+    bloco.appendChild(detail);
+  });
+  content.appendChild(bloco);
+  // Total geral do ano
+  var tot=document.createElement('div');
+  tot.style.cssText='background:rgba(201,162,39,.1);border:1px solid rgba(201,162,39,.28);border-radius:14px;padding:14px;display:flex;justify-content:space-between;align-items:center;margin-top:10px;';
+  tot.innerHTML='<span style="font-size:13px;font-weight:700;color:var(--gold)">TOTAL DO ANO</span><span style="font-size:20px;font-weight:700;color:var(--white)">'+ccFmt(totalAno)+'</span>';
+  content.appendChild(tot);
 }
 
 function ccRenderCartoes(){
@@ -3860,6 +3973,7 @@ function ccShowSection(sec){
   if(sec==='cc-lancamentos'){ccRenderChips();ccRenderLancList();}
   if(sec==='cc-resumo') ccRenderResumo();
   if(sec==='cc-relatorio') ccRenderRelatorio();
+  if(sec==='cc-anual') ccRenderAnualCategoria();
   if(sec==='cc-cartoes') ccRenderCartoes();
 }
 
