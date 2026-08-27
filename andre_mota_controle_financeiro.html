@@ -1805,6 +1805,9 @@ var CC_ITEMS=['Parcelado 1','Parcelado 2','Parcelado 3','Parcelado 4','Parcelado
 // Linhas personalizadas por categoria — salvas no localStorage
 // Estrutura: { receitas: [{nome:'X'}], fixos: [{nome:'Y'}], variaveis: [...], cartao: [...], emprestimos: [...] }
 var customLines = { receitas:[], fixos:[], variaveis:[], cartao:[], emprestimos:[] };
+// Nomes personalizados pras linhas fixas (ex: renomear "Gasto fixo extra 1" pra "Sky TV Casa Pai").
+// baseItemNomes[cat][idx] = nome customizado. Se nao tiver entrada, usa o nome padrao da lista original.
+var baseItemNomes = { receitas:{}, fixos:{}, variaveis:{}, cartao:{} };
 // Configuração de "preenchimento automático" por linha: autoConfig[cat][idx] = {fimAno, fimMes} (null = sem data pra terminar)
 // Se nao tiver entrada pra um idx, essa linha NAO repete sozinha (comportamento de sempre, preenche manual mes a mes)
 var autoConfig = { receitas:{}, fixos:{}, variaveis:{}, cartao:{} };
@@ -1837,6 +1840,20 @@ function loadAutoConfig(){
     }
   }catch(e){}
 }
+function saveBaseItemNomes(){
+  try{ localStorage.setItem('amcf_base_nomes', JSON.stringify(baseItemNomes)); }catch(e){}
+}
+function loadBaseItemNomes(){
+  try{
+    var s = localStorage.getItem('amcf_base_nomes');
+    if(s){
+      var p = JSON.parse(s);
+      ['receitas','fixos','variaveis','cartao'].forEach(function(k){
+        if(p[k]) baseItemNomes[k] = p[k];
+      });
+    }
+  }catch(e){}
+}
 
 // Ativa/desativa (ou reconfigura) o preenchimento automático de uma linha especifica
 function toggleAutoRepetir(cat,idx,nome,btnEl){
@@ -1859,6 +1876,16 @@ function toggleAutoRepetir(cat,idx,nome,btnEl){
       if(fimMes<0||fimMes>11){alert('Mês inválido. Use MM/AAAA, ex: 07/2027.');return;}
     }
     autoConfig[cat][idx]={fimAno:fimAno,fimMes:fimMes};
+    saveAutoConfig();
+    var valorAtual=ensureMonthData(currentYear,currentMonth)[cat][idx];
+    if(valorAtual!==undefined&&parseFloat(valorAtual)!==0){
+      propagarAutoRepetirParaFrente(cat,idx,valorAtual,currentYear,currentMonth);
+      saveData();
+      fillInputs();
+      recalcAll();
+    }
+    if(btnEl) btnEl.classList.toggle('active',true);
+    return;
   }
   saveAutoConfig();
   if(btnEl) btnEl.classList.toggle('active',!!autoConfig[cat][idx]);
@@ -2344,6 +2371,7 @@ function syncBuildPayload(){
     emprestimos:emprestimos,
     customLines:customLines,
     autoConfig:autoConfig,
+    baseItemNomes:baseItemNomes,
     perfil:perfil,
     metaReserva:metaReserva,
     ccCartoes:(typeof ccCartoes!=='undefined')?ccCartoes:[],
@@ -2405,6 +2433,7 @@ function syncApplyPayload(payload){
   emprestimos=payload.emprestimos||emprestimos;
   customLines=payload.customLines||customLines;
   if(payload.autoConfig) autoConfig=payload.autoConfig;
+  if(payload.baseItemNomes) baseItemNomes=payload.baseItemNomes;
   perfil=payload.perfil||perfil;
   if(typeof payload.metaReserva==='number') metaReserva=payload.metaReserva;
   if(typeof ccCartoes!=='undefined'&&payload.ccCartoes) ccCartoes=payload.ccCartoes;
@@ -2417,6 +2446,7 @@ function syncApplyPayload(payload){
     localStorage.setItem('amcf_emp',JSON.stringify(emprestimos));
     saveCustomLines();
     saveAutoConfig();
+    saveBaseItemNomes();
     localStorage.setItem('amcf_perfil',JSON.stringify(perfil));
     localStorage.setItem('amcf_meta_reserva',metaReserva);
     if(typeof ccSave==='function') ccSave();
@@ -4237,6 +4267,7 @@ function voltarTutorial(){
 }
 
 loadAutoConfig();
+loadBaseItemNomes();
 initData();
 loadData();
 loadCustomLines();
@@ -4333,7 +4364,55 @@ function changeMonth(dir){
   var activeSecEl=document.querySelector('.section.active');
   if(activeSecEl) ccShowSection(activeSecEl.id.replace('sec-',''));
 }
-function buildList(cid,items,cat,cls){var el=document.getElementById(cid);el.innerHTML='';for(var i=0;i<items.length;i++){var row=document.createElement('div');row.className='item-row';row.style.animationDelay=(i*0.03)+'s';var span=document.createElement('span');span.className='item-name';span.textContent=items[i];var inp=document.createElement('input');inp.type='number';inp.setAttribute('inputmode','decimal');inp.className='item-input '+cls;inp.id=cat+'_'+i;inp.value='';inp.placeholder='0,00';var autoBtn=document.createElement('button');autoBtn.className='auto-repeat-btn'+(autoConfig[cat]&&autoConfig[cat][i]?' active':'');autoBtn.title='Preencher automaticamente nos próximos meses';autoBtn.textContent='🔁';autoBtn.setAttribute('data-cat',cat);autoBtn.setAttribute('data-idx',i);autoBtn.setAttribute('data-nome',items[i]);autoBtn.onclick=function(e){e.preventDefault();toggleAutoRepetir(this.getAttribute('data-cat'),parseInt(this.getAttribute('data-idx')),this.getAttribute('data-nome'),this);};row.appendChild(span);row.appendChild(inp);row.appendChild(autoBtn);el.appendChild(row);}}
+function buildList(cid,items,cat,cls){
+  var el=document.getElementById(cid);
+  el.innerHTML='';
+  for(var i=0;i<items.length;i++){
+    (function(idx){
+      var nomeOriginal=items[idx];
+      var row=document.createElement('div');
+      row.className='item-row';
+      row.style.animationDelay=(idx*0.03)+'s';
+      var span=document.createElement('span');
+      span.className='item-name';
+      span.textContent=(baseItemNomes[cat]&&baseItemNomes[cat][idx])?baseItemNomes[cat][idx]:nomeOriginal;
+      span.title='Clique para renomear';
+      span.style.cursor='pointer';
+      span.onclick=function(){
+        var atual=(baseItemNomes[cat]&&baseItemNomes[cat][idx])?baseItemNomes[cat][idx]:nomeOriginal;
+        var novo=prompt('Renomear linha:',atual);
+        if(novo&&novo.trim()){
+          if(!baseItemNomes[cat]) baseItemNomes[cat]={};
+          baseItemNomes[cat][idx]=novo.trim();
+          saveBaseItemNomes();
+          this.textContent=novo.trim();
+          var autoBtnEl=document.getElementById('autoBtn_'+cat+'_'+idx);
+          if(autoBtnEl) autoBtnEl.setAttribute('data-nome',novo.trim());
+        }
+      };
+      var inp=document.createElement('input');
+      inp.type='number';
+      inp.setAttribute('inputmode','decimal');
+      inp.className='item-input '+cls;
+      inp.id=cat+'_'+idx;
+      inp.value='';
+      inp.placeholder='0,00';
+      var autoBtn=document.createElement('button');
+      autoBtn.className='auto-repeat-btn'+(autoConfig[cat]&&autoConfig[cat][idx]?' active':'');
+      autoBtn.title='Preencher automaticamente nos próximos meses';
+      autoBtn.textContent='🔁';
+      autoBtn.id='autoBtn_'+cat+'_'+idx;
+      autoBtn.setAttribute('data-cat',cat);
+      autoBtn.setAttribute('data-idx',idx);
+      autoBtn.setAttribute('data-nome',(baseItemNomes[cat]&&baseItemNomes[cat][idx])?baseItemNomes[cat][idx]:nomeOriginal);
+      autoBtn.onclick=function(e){e.preventDefault();toggleAutoRepetir(this.getAttribute('data-cat'),parseInt(this.getAttribute('data-idx')),this.getAttribute('data-nome'),this);};
+      row.appendChild(span);
+      row.appendChild(inp);
+      row.appendChild(autoBtn);
+      el.appendChild(row);
+    })(i);
+  }
+}
 function buildLists(){
   buildList('listReceitas',RECEITAS_ITEMS,'receitas','');
   buildList('listFixos',FIXOS_ITEMS,'fixos','red-i');
@@ -4406,11 +4485,38 @@ function copiarMesAnterior(cat){
   showToast();
 }
 function saveValue(cat,idx,val){
-  ensureMonthData(currentYear,currentMonth)[cat][idx]=parseFloat(val)||0;
+  var valor=parseFloat(val)||0;
+  ensureMonthData(currentYear,currentMonth)[cat][idx]=valor;
+  if(autoConfig[cat]&&autoConfig[cat][idx]!==undefined&&valor!==0){
+    propagarAutoRepetirParaFrente(cat,idx,valor,currentYear,currentMonth);
+  }
   recalcAll();
   saveData();
   var el=document.getElementById(cat+'_'+idx);
   if(el){el.classList.remove('input-flash');void el.offsetWidth;el.classList.add('input-flash');setTimeout(function(){el.classList.remove('input-flash');},400);}
+}
+
+// Empurra um valor pra frente, preenchendo os meses SEGUINTES que ja existem e ainda estao vazios (0),
+// respeitando a data de termino configurada (se tiver). Isso cobre o caso de meses que ja foram visitados
+// ANTES de ativar o preenchimento automatico — o gatilho dentro de ensureMonthData sozinho so cobre meses novos.
+function propagarAutoRepetirParaFrente(cat,idx,valor,anoOrigem,mesOrigem){
+  var cfg=autoConfig[cat]&&autoConfig[cat][idx];
+  if(!cfg) return;
+  var mesAbsOrigem=anoOrigem*12+mesOrigem;
+  var mesAbsFim=(cfg.fimAno!=null&&cfg.fimMes!=null)?(cfg.fimAno*12+cfg.fimMes):null;
+  for(var anoStr in data){
+    var ano=parseInt(anoStr);
+    for(var mes=0;mes<12;mes++){
+      var mesAbsAlvo=ano*12+mes;
+      if(mesAbsAlvo<=mesAbsOrigem) continue;
+      if(mesAbsFim!=null&&mesAbsAlvo>mesAbsFim) continue;
+      if(!data[ano][mes]||!data[ano][mes][cat]) continue;
+      var atual=data[ano][mes][cat][idx];
+      if(atual===undefined||parseFloat(atual)===0){
+        data[ano][mes][cat][idx]=valor;
+      }
+    }
+  }
 }
 function recalcAll(){var d=ensureMonthData(currentYear,currentMonth);d.meta=parseFloat(document.getElementById('metaInput').value)||500;var rec=sum(d.receitas)+sumReceitasEmpMes(currentMonth,currentYear),fix=sum(d.fixos),vari=sum(d.variaveis),cc=sum(d.cartao)+sumCCMes(currentMonth);var empMes=sumEmpMes(currentMonth,currentYear);var total=fix+vari+cc+empMes,saldo=rec-total,pct=rec>0?(total/rec):0,eco=Math.max(saldo,0);document.getElementById('totalRecBadge').textContent=fmtS(rec);document.getElementById('totalFixBadge').textContent=fmtS(fix);document.getElementById('totalVarBadge').textContent=fmtS(vari);document.getElementById('totalCCBadge').textContent=fmtS(cc);
 animateNumber(document.getElementById('dashReceita'),rec,'R$',false);
