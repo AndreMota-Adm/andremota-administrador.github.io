@@ -4499,7 +4499,7 @@ function saveValue(cat,idx,val){
 // Empurra um valor pra frente, preenchendo os meses SEGUINTES que ja existem e ainda estao vazios (0),
 // respeitando a data de termino configurada (se tiver). Isso cobre o caso de meses que ja foram visitados
 // ANTES de ativar o preenchimento automatico — o gatilho dentro de ensureMonthData sozinho so cobre meses novos.
-function propagarAutoRepetirParaFrente(cat,idx,valor,anoOrigem,mesOrigem){
+function propagarAutoRepetirParaFrente(cat,idx,valor,anoOrigem,mesOrigem,forcarSobrescrever){
   var cfg=autoConfig[cat]&&autoConfig[cat][idx];
   if(!cfg) return;
   var mesAbsOrigem=anoOrigem*12+mesOrigem;
@@ -4512,10 +4512,43 @@ function propagarAutoRepetirParaFrente(cat,idx,valor,anoOrigem,mesOrigem){
       if(mesAbsFim!=null&&mesAbsAlvo>mesAbsFim) continue;
       if(!data[ano][mes]||!data[ano][mes][cat]) continue;
       var atual=data[ano][mes][cat][idx];
-      if(atual===undefined||parseFloat(atual)===0){
+      if(forcarSobrescrever||atual===undefined||parseFloat(atual)===0){
         data[ano][mes][cat][idx]=valor;
       }
     }
+  }
+}
+
+// Roda quando o usuario termina de editar um campo (perde o foco) — so entra em acao se a linha tiver
+// auto-repetir ativo E o valor novo for diferente do que ja estava nos meses seguintes (ex: reajuste de plano).
+// Nesse caso, pergunta se aplica o novo valor dali em diante tambem, substituindo o que ja estava la.
+function verificarPropagacaoAutoRepetir(cat,idx,val){
+  if(!autoConfig[cat]||autoConfig[cat][idx]===undefined) return;
+  var valor=parseFloat(val)||0;
+  if(valor===0) return;
+  var cfg=autoConfig[cat][idx];
+  var mesAbsOrigem=currentYear*12+currentMonth;
+  var mesAbsFim=(cfg.fimAno!=null&&cfg.fimMes!=null)?(cfg.fimAno*12+cfg.fimMes):null;
+  var temDivergencia=false;
+  for(var anoStr in data){
+    var ano=parseInt(anoStr);
+    for(var mes=0;mes<12;mes++){
+      var mesAbsAlvo=ano*12+mes;
+      if(mesAbsAlvo<=mesAbsOrigem) continue;
+      if(mesAbsFim!=null&&mesAbsAlvo>mesAbsFim) continue;
+      if(!data[ano][mes]||!data[ano][mes][cat]) continue;
+      var atual=parseFloat(data[ano][mes][cat][idx])||0;
+      if(atual!==0&&Math.abs(atual-valor)>0.001){temDivergencia=true;break;}
+    }
+    if(temDivergencia) break;
+  }
+  if(!temDivergencia) return;
+  var aplicar=confirm('Esse valor mudou (reajuste?).\n\nAplicar '+fmtS(valor)+' também nos meses seguintes, no lugar do valor antigo que já estava neles?\n\nOK = sim, atualizar dali em diante\nCancelar = não, só este mês');
+  if(aplicar){
+    propagarAutoRepetirParaFrente(cat,idx,valor,currentYear,currentMonth,true);
+    saveData();
+    fillInputs();
+    recalcAll();
   }
 }
 function recalcAll(){var d=ensureMonthData(currentYear,currentMonth);d.meta=parseFloat(document.getElementById('metaInput').value)||500;var rec=sum(d.receitas)+sumReceitasEmpMes(currentMonth,currentYear),fix=sum(d.fixos),vari=sum(d.variaveis),cc=sum(d.cartao)+sumCCMes(currentMonth);var empMes=sumEmpMes(currentMonth,currentYear);var total=fix+vari+cc+empMes,saldo=rec-total,pct=rec>0?(total/rec):0,eco=Math.max(saldo,0);document.getElementById('totalRecBadge').textContent=fmtS(rec);document.getElementById('totalFixBadge').textContent=fmtS(fix);document.getElementById('totalVarBadge').textContent=fmtS(vari);document.getElementById('totalCCBadge').textContent=fmtS(cc);
@@ -4927,7 +4960,18 @@ function initEvents(){
     btnEnt.onclick = irParaSplash;
     btnEnt.addEventListener('touchend',function(e){ e.preventDefault(); irParaSplash(); });
   }
-  var b=document.getElementById('btnStart');if(b){b.onclick=startApp;b.addEventListener('touchend',function(e){e.preventDefault();startApp();});}var bp=document.getElementById('btnPrevMonth');if(bp){bp.onclick=function(){changeMonth(-1);};bp.addEventListener('touchend',function(e){e.preventDefault();changeMonth(-1);});}var bn=document.getElementById('btnNextMonth');if(bn){bn.onclick=function(){changeMonth(1);};bn.addEventListener('touchend',function(e){e.preventDefault();changeMonth(1);});}var tabs=document.querySelectorAll('.nav-tab');for(var i=0;i<tabs.length;i++){(function(btn){btn.onclick=function(){showSection(btn.getAttribute('data-sec'));};btn.addEventListener('touchend',function(e){e.preventDefault();showSection(btn.getAttribute('data-sec'));});})(tabs[i]);}var bnavs=document.querySelectorAll('.bnav-btn');for(var i=0;i<bnavs.length;i++){(function(btn){btn.onclick=function(){showSection(btn.getAttribute('data-sec'));};btn.addEventListener('touchend',function(e){e.preventDefault();showSection(btn.getAttribute('data-sec'));});})(bnavs[i]);}document.addEventListener('input',function(e){if(e.target.classList.contains('item-input')){var parts=e.target.id.split('_');saveValue(parts[0],parseInt(parts[1]),e.target.value);}if(e.target.id==='metaInput'){recalcAll();saveData();}});}
+  var b=document.getElementById('btnStart');if(b){b.onclick=startApp;b.addEventListener('touchend',function(e){e.preventDefault();startApp();});}var bp=document.getElementById('btnPrevMonth');if(bp){bp.onclick=function(){changeMonth(-1);};bp.addEventListener('touchend',function(e){e.preventDefault();changeMonth(-1);});}var bn=document.getElementById('btnNextMonth');if(bn){bn.onclick=function(){changeMonth(1);};bn.addEventListener('touchend',function(e){e.preventDefault();changeMonth(1);});}var tabs=document.querySelectorAll('.nav-tab');for(var i=0;i<tabs.length;i++){(function(btn){btn.onclick=function(){showSection(btn.getAttribute('data-sec'));};btn.addEventListener('touchend',function(e){e.preventDefault();showSection(btn.getAttribute('data-sec'));});})(tabs[i]);}var bnavs=document.querySelectorAll('.bnav-btn');for(var i=0;i<bnavs.length;i++){(function(btn){btn.onclick=function(){showSection(btn.getAttribute('data-sec'));};btn.addEventListener('touchend',function(e){e.preventDefault();showSection(btn.getAttribute('data-sec'));});})(bnavs[i]);}document.addEventListener('input',function(e){if(e.target.classList.contains('item-input')){var parts=e.target.id.split('_');saveValue(parts[0],parseInt(parts[1]),e.target.value);}if(e.target.id==='metaInput'){recalcAll();saveData();}});
+  document.addEventListener('change',function(e){
+    if(e.target.classList.contains('item-input')){
+      var parts=e.target.id.split('_');
+      var cat=parts[0];
+      var idx;
+      if(parts[1]==='custom'){ idx=getBaseLen(cat)+parseInt(parts[2]); }
+      else { idx=parseInt(parts[1]); }
+      if(!isNaN(idx)) verificarPropagacaoAutoRepetir(cat,idx,e.target.value);
+    }
+  });
+}
 document.addEventListener('click',function(e){var t=e.target;while(t){if(t.id==='btnAddEmp'){e.preventDefault();addEmprestimo();return;}t=t.parentElement;}});
 document.addEventListener('touchend',function(e){var t=e.target;while(t){if(t.id==='btnAddEmp'){e.preventDefault();e.stopPropagation();addEmprestimo();return;}t=t.parentElement;}});
 if(document.readyState==='loading'){document.addEventListener('DOMContentLoaded',initEvents);}else{initEvents();}</script>
